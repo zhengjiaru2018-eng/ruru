@@ -14,7 +14,7 @@
 ## 启动前：请在 GitHub 网页完成授权
 1. 使用新账号，进入 `ruru` → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**。
 2. 新增名为 `ONESIP_MIGRATION_TOKEN` 的 Secret。
-3. Secret 内容使用你自己在 GitHub 上生成的有效期较短的 Fine-grained Personal Access Token（资源所有者为 `zhengjiaru2018-eng`，Repository access 选 **All repositories**，授予创建仓库所需的 Administration/Repository creation 写入权限和 Contents 读写权限）。如果页面权限名称或范围不同，请先依照 GitHub 官方文档核对。
+3. Secret 内容使用你自己在 GitHub 上生成的有效期较短的 **Fine-grained Personal Access Token**：Resource owner 必须为 `zhengjiaru2018-eng`，Repository access 选 **All repositories**（不能只选 `ruru`）。Repository permissions：**Repository creation: Read and write** 或 **Administration: Read and write**，并且 **Contents: Read and write**。GitHub 官方文档确认 `POST /user/repos` 需要前述创建权限之一。
 4. 打开 **Actions** → **Mirror OneSip Public Repositories** → **Run workflow**。
 5. 查看 Actions 的日志和 Job Summary，核对结果。迁移完毕后**删除该 Secret 并撤销 PAT**。
 
@@ -26,3 +26,18 @@
 - `.github/workflows/migrate-onesip.yml`：手动启动的 GitHub Actions 工作流
 
 原仓库的大小、Git LFS、存储配额和受保护分支等可能影响部分迁移，按执行日志逐项确认。
+
+## 如果出现 HTTP 403
+
+若日志提示 `gh: Resource not accessible by personal access token (HTTP 403)`，代表当前保存在 `ONESIP_MIGRATION_TOKEN` Secret 中的 Token 无法执行 `POST /user/repos` 创建新仓库。常见原因是没有勾选 **Repository creation (write)** 或 **Administration (write)**，或资源所有者/可访问仓库范围选错。
+
+**处理方法：**
+1. 打开 GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens，重新生成一个短期 Token（或调整现有 Token 的权限）。资源所有者需为 `zhengjiaru2018-eng`。
+2. 选 **All repositories**，授予 Repository creation（write，或 Administration write）以及 Contents（write）。
+3. 回到 `ruru` → Settings → Secrets and variables → Actions → `ONESIP_MIGRATION_TOKEN`，用新 Token **替换 Secret 的值**。
+4. 在 Actions 工作流选择 **Run workflow** 重新启动。不要只点重新运行旧的错误日志而不调整 Secret。
+5. 核对新产生的私有仓库及 Actions Job Summary；完成后撤销 Token 并删除 Secret。
+
+Github 官方接口权限文档：https://docs.github.com/en/rest/repos/repos#create-a-repository-for-the-authenticated-user
+
+**注意：** 直接在 ChatGPT 连接 GitHub，并不等于 GitHub Actions 中的 PAT 自动获得创建新仓库的权限。
