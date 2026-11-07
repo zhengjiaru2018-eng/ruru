@@ -1,0 +1,36 @@
+name: Mirror OneSip Public Repositories
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: onesip-public-migration
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ secrets.ONESIP_MIGRATION_TOKEN }}
+      GH_PROMPT_DISABLED: "1"
+    steps:
+      - name: Check required secret
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::error::Set repository secret ONESIP_MIGRATION_TOKEN before running."
+            exit 1
+          fi
+      - name: Checkout migration controller
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Git LFS
+        run: |
+          git lfs version
+      - name: Mirror all repositories
+        shell: bash
+        run: bash scripts/migrate-onesip.sh
