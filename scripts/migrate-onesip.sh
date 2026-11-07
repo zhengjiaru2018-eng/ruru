@@ -34,6 +34,7 @@ fi
 success=0
 skipped=0
 failed=0
+aborted=0
 report="$WORKDIR/report.tsv"
 printf 'Repository\tStatus\tDetails\n' > "$report"
 
@@ -65,7 +66,16 @@ while IFS= read -r repo || [[ -n "$repo" ]]; do
   fi
 
   # Never upload to a pre-existing repository; create as private for safety review.
-  if ! gh api --method POST user/repos -f name="$repo" -F private=true -f description="Mirror of https://github.com/$SOURCE_OWNER/$repo" --silent; then
+  if ! gh api --method POST user/repos -f name="$repo" -F private=true -f description="Mirror of https://github.com/$SOURCE_OWNER/$repo" --silent 2>"$WORKDIR/create_error.txt"; then
+    cat "$WORKDIR/create_error.txt" >&2
+    if grep -Eq "HTTP (401|403)|Resource not accessible by personal access token" "$WORKDIR/create_error.txt"; then
+      echo "::error::Cannot create repositories: token lacks Repository creation (write) or Administration (write). It also needs Contents (read/write) to push Git data. Update the token and replace the Actions secret, then start a new workflow run."
+      printf '%s\tFAILED\tHTTP 401/403: insufficient GitHub Token permissions. Migration stopped early\n' "$repo" >> "$report"
+      ((failed+=1))
+      aborted=1
+      echo "::endgroup::"
+      break
+    fi
     printf '%s\tFAILED\tCould not create destination (permission or quota)\n' "$repo" >> "$report"
     ((failed+=1))
     echo "::endgroup::"
@@ -99,11 +109,14 @@ done < "$REPO_LIST"
 {
   echo '## OneSip Git mirror migration'
   echo
-  echo "- Source: `$SOURCE_OWNER`"
-  echo "- Destination: `$DEST_OWNER`"
+  printf -- '- Source: `%s`\n' "$SOURCE_OWNER"
+  printf -- '- Destination: `%s`\n' "$DEST_OWNER"
   echo "- Succeeded: **$success**"
   echo "- Skipped (already existed): **$skipped**"
   echo "- Needs attention: **$failed**"
+  if (( aborted )); then
+    echo "- **Stopped early:** token does not have permission to create new repositories. Remaining projects were not attempted."
+  fi
   echo
   echo 'Repository | Status | Details'
   echo '--- | --- | ---'
