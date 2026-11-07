@@ -2,6 +2,8 @@ name: Mirror OneSip Public Repositories
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '17 1 8 11 *' # One-time migration on 2026-11-08 at 02:17 Europe/Amsterdam.
 
 permissions:
   contents: read
@@ -18,19 +20,30 @@ jobs:
       GH_TOKEN: ${{ secrets.ONESIP_MIGRATION_TOKEN }}
       GH_PROMPT_DISABLED: "1"
     steps:
+      - name: Check one-time schedule date
+        id: migration-window
+        shell: bash
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" != schedule || "$(date -u +%F)" == 2026-11-08 ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Check required secret
+        if: steps.migration-window.outputs.run == 'true'
         run: |
           if [[ -z "$GH_TOKEN" ]]; then
             echo "::error::Set repository secret ONESIP_MIGRATION_TOKEN before running."
             exit 1
           fi
       - name: Checkout migration controller
+        if: steps.migration-window.outputs.run == 'true'
         uses: actions/checkout@v4
         with:
           persist-credentials: false
       - name: Install Git LFS
+        if: steps.migration-window.outputs.run == 'true'
         run: |
           git lfs version
       - name: Mirror all repositories
+        if: steps.migration-window.outputs.run == 'true'
         shell: bash
         run: bash scripts/migrate-onesip.sh
