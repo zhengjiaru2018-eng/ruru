@@ -10,6 +10,7 @@ trap 'rm -rf "$WORKDIR"' EXIT
 : "${GH_TOKEN:?ONESIP_MIGRATION_TOKEN is required as GH_TOKEN}"
 command -v gh >/dev/null
 command -v git >/dev/null
+git lfs version >/dev/null
 export GIT_TERMINAL_PROMPT=0
 
 # Avoid putting access tokens in clone/push URLs, saved Git config, or command logs.
@@ -58,18 +59,38 @@ while IFS= read -r repo || [[ -n "$repo" ]]; do
 
   dir="$WORKDIR/${repo}.git"
   # Public sources require no old-account login.
-  if ! git clone --bare --quiet "https://github.com/$SOURCE_OWNER/$repo.git" "$dir"; then
+  source_url="https://github.com/$SOURCE_OWNER/$repo.git"
+  destination_url="https://github.com/$DEST_OWNER/$repo.git"
+  if ! env -u GIT_ASKPASS git -c credential.helper= clone --bare --quiet "$source_url" "$dir"; then
     printf '%s\tFAILED\tCould not clone source\n' "$repo" >> "$report"
     ((failed+=1))
     echo "::endgroup::"
     continue
   fi
 
-  # Never upload to a pre-existing repository; create as private for safety review.
+  # Enumerate Git refs and fetch LFS objects before creating a destination.
+  if ! git -C "$dir" for-each-ref --format='%(objectname)%09%(refname)' refs/heads refs/tags \
+      | LC_ALL=C sort > "$WORKDIR/source-refs" ||
+      ! git -C "$dir" lfs ls-files --all > "$WORKDIR/lfs-files"; then
+    printf '%s\tFAILED\tCould not inspect source refs or LFS pointers\n' "$repo" >> "$report"
+    ((failed+=1))
+    echo "::endgroup::"
+    continue
+  fi
+  if [[ -s "$WORKDIR/lfs-files" ]] &&
+      ! env -u GIT_ASKPASS git -C "$dir" -c credential.helper= \
+        -c lfs.url="$source_url/info/lfs" lfs fetch --all origin; then
+    printf '%s\tFAILED\tCould not fetch source LFS objects\n' "$repo" >> "$report"
+    ((failed+=1))
+    echo "::endgroup::"
+    continue
+  fi
+
+  # GitHub rejects duplicate names, even if an existing private repo was hidden by the token.
   if ! gh api --method POST user/repos -f name="$repo" -F private=true -f description="Mirror of https://github.com/$SOURCE_OWNER/$repo" --silent 2>"$WORKDIR/create_error.txt"; then
     cat "$WORKDIR/create_error.txt" >&2
     if grep -Eq "HTTP (401|403)|Resource not accessible by personal access token" "$WORKDIR/create_error.txt"; then
-      echo "::error::Cannot create repositories: token lacks Repository creation (write) or Administration (write). It also needs Contents (read/write) to push Git data. Update the token and replace the Actions secret, then start a new workflow run."
+      echo "::error::Cannot create repositories: use a short-lived classic token with repo and workflow scopes, or a fine-grained token for all repositories on the destination account with Administration, Contents and Workflows read/write. Update the token and replace the Actions secret, then start a new workflow run."
       printf '%s\tFAILED\tHTTP 401/403: insufficient GitHub Token permissions. Migration stopped early\n' "$repo" >> "$report"
       ((failed+=1))
       aborted=1
@@ -82,26 +103,62 @@ while IFS= read -r repo || [[ -n "$repo" ]]; do
     continue
   fi
 
-  git -C "$dir" remote add destination "https://github.com/$DEST_OWNER/$repo.git"
-  if ! git -C "$dir" push --mirror destination; then
-    printf '%s\tFAILED\tRepository created, Git refs need checking\n' "$repo" >> "$report"
+  # Keep copied workflow files in Git history without executing them on import.
+  if ! gh api --method PUT "repos/$DEST_OWNER/$repo/actions/permissions" -F enabled=false --silent; then
+    printf '%s\tFAILED\tPrivate repository created; could not disable Actions before import\n' "$repo" >> "$report"
+    ((failed+=1))
+    aborted=1
+    echo "::endgroup::"
+    break
+  fi
+
+  git -C "$dir" remote add destination "$destination_url"
+  # Pin both LFS URLs so source configuration cannot redirect the destination token.
+  if [[ -s "$WORKDIR/lfs-files" ]] &&
+      ! git -C "$dir" -c lfs.url="$destination_url/info/lfs" \
+        -c lfs.pushurl="$destination_url/info/lfs" lfs push --all destination; then
+    printf '%s\tFAILED\tPrivate repository created; LFS upload failed\n' "$repo" >> "$report"
     ((failed+=1))
     echo "::endgroup::"
     continue
   fi
 
-  if command -v git-lfs >/dev/null 2>&1 || git lfs version >/dev/null 2>&1; then
-    if git -C "$dir" lfs ls-files --all | grep -q .; then
-      if ! git -C "$dir" lfs fetch --all origin || ! git -C "$dir" lfs push --all destination; then
-        printf '%s\tFAILED\tGit refs mirrored; LFS transfer needs attention\n' "$repo" >> "$report"
-        ((failed+=1))
-        echo "::endgroup::"
-        continue
-      fi
+  leases=()
+  refspecs=()
+  while IFS=$'\t' read -r object_id ref; do
+    leases+=("--force-with-lease=$ref:")
+    refspecs+=("$object_id:$ref")
+  done < "$WORKDIR/source-refs"
+
+  # Require each destination ref to be absent. An atomic push prevents partial ref updates.
+  if (( ${#refspecs[@]} > 0 )) &&
+      ! git -C "$dir" push --atomic "${leases[@]}" destination "${refspecs[@]}"; then
+    printf '%s\tFAILED\tPrivate repository created; atomic ref push failed\n' "$repo" >> "$report"
+    ((failed+=1))
+    echo "::endgroup::"
+    continue
+  fi
+
+  if (( ${#refspecs[@]} > 0 )); then
+    default_branch="$(git -C "$dir" symbolic-ref --short HEAD)"
+    if ! gh api --method PATCH "repos/$DEST_OWNER/$repo" -f default_branch="$default_branch" --silent; then
+      printf '%s\tFAILED\tGit refs pushed; could not set source default branch\n' "$repo" >> "$report"
+      ((failed+=1))
+      echo "::endgroup::"
+      continue
     fi
   fi
 
-  printf '%s\tSUCCESS\tPrivate repository mirror created\n' "$repo" >> "$report"
+  if ! git -C "$dir" ls-remote --refs --heads --tags destination | LC_ALL=C sort > "$WORKDIR/destination-refs" ||
+      ! cmp -s "$WORKDIR/source-refs" "$WORKDIR/destination-refs" ||
+      [[ "$(gh api "repos/$DEST_OWNER/$repo" --jq .private)" != true ]]; then
+    printf '%s\tFAILED\tCould not verify private visibility and matching branch and tag IDs\n' "$repo" >> "$report"
+    ((failed+=1))
+    echo "::endgroup::"
+    continue
+  fi
+
+  printf '%s\tSUCCESS\tPrivate visibility, branches and tags verified\n' "$repo" >> "$report"
   ((success+=1))
   echo "::endgroup::"
 done < "$REPO_LIST"
@@ -115,7 +172,7 @@ done < "$REPO_LIST"
   echo "- Skipped (already existed): **$skipped**"
   echo "- Needs attention: **$failed**"
   if (( aborted )); then
-    echo "- **Stopped early:** token does not have permission to create new repositories. Remaining projects were not attempted."
+    echo "- **Stopped early:** the token could not create a repository or configure Actions. Remaining projects were not attempted."
   fi
   echo
   echo 'Repository | Status | Details'
