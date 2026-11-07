@@ -32,6 +32,38 @@ if [[ "$actual_login" != "$DEST_OWNER" ]]; then
   exit 1
 fi
 
+# Serialize writes and honor GitHub's cooldown before retrying rate-limited requests.
+write_api() {
+  local attempt delay retry_after remaining reset now
+  for attempt in 0 1 2 3 4; do
+    sleep 1
+    if gh api --include "$@" > "$WORKDIR/api-response" 2> "$WORKDIR/api-error"; then
+      return 0
+    fi
+    cat "$WORKDIR/api-error" >&2
+    remaining="$(awk 'tolower($1) == "x-ratelimit-remaining:" {print $2+0; exit}' "$WORKDIR/api-response")"
+    if ! grep -Eqi 'rate limit|HTTP 429' "$WORKDIR/api-error" && [[ "$remaining" != 0 ]]; then
+      return 1
+    fi
+    if (( attempt == 4 )); then
+      return 75
+    fi
+
+    delay=$((60 << attempt))
+    retry_after="$(awk 'tolower($1) == "retry-after:" {print $2+0; exit}' "$WORKDIR/api-response")"
+    if [[ "$retry_after" =~ ^[0-9]+$ ]] && (( retry_after > delay )); then
+      delay="$retry_after"
+    fi
+    reset="$(awk 'tolower($1) == "x-ratelimit-reset:" {printf "%.0f", $2; exit}' "$WORKDIR/api-response")"
+    now="$(date +%s)"
+    if [[ "$remaining" == 0 && "$reset" =~ ^[0-9]+$ ]] && (( reset - now + 1 > delay )); then
+      delay=$((reset - now + 1))
+    fi
+    echo "GitHub rate limit reached. Retrying the same request in ${delay}s."
+    sleep "$delay"
+  done
+}
+
 success=0
 skipped=0
 failed=0
@@ -87,9 +119,18 @@ while IFS= read -r repo || [[ -n "$repo" ]]; do
   fi
 
   # GitHub rejects duplicate names, even if an existing private repo was hidden by the token.
-  if ! gh api --method POST user/repos -f name="$repo" -F private=true -f description="Mirror of https://github.com/$SOURCE_OWNER/$repo" --silent 2>"$WORKDIR/create_error.txt"; then
-    cat "$WORKDIR/create_error.txt" >&2
-    if grep -Eq "HTTP (401|403)|Resource not accessible by personal access token" "$WORKDIR/create_error.txt"; then
+  create_status=0
+  write_api --method POST user/repos -f name="$repo" -F private=true \
+    -f description="Mirror of https://github.com/$SOURCE_OWNER/$repo" || create_status=$?
+  if (( create_status != 0 )); then
+    if (( create_status == 75 )); then
+      printf '%s\tFAILED\tGitHub rate limit persisted after retries\n' "$repo" >> "$report"
+      ((failed+=1))
+      aborted=1
+      echo "::endgroup::"
+      break
+    fi
+    if grep -Eq "HTTP (401|403)|Resource not accessible by personal access token" "$WORKDIR/api-error"; then
       echo "::error::Cannot create repositories: use a short-lived classic token with repo and workflow scopes, or a fine-grained token for all repositories on the destination account with Administration, Contents and Workflows read/write. Update the token and replace the Actions secret, then start a new workflow run."
       printf '%s\tFAILED\tHTTP 401/403: insufficient GitHub Token permissions. Migration stopped early\n' "$repo" >> "$report"
       ((failed+=1))
@@ -104,7 +145,7 @@ while IFS= read -r repo || [[ -n "$repo" ]]; do
   fi
 
   # Keep copied workflow files in Git history without executing them on import.
-  if ! gh api --method PUT "repos/$DEST_OWNER/$repo/actions/permissions" -F enabled=false --silent; then
+  if ! write_api --method PUT "repos/$DEST_OWNER/$repo/actions/permissions" -F enabled=false; then
     printf '%s\tFAILED\tPrivate repository created; could not disable Actions before import\n' "$repo" >> "$report"
     ((failed+=1))
     aborted=1
@@ -141,7 +182,8 @@ while IFS= read -r repo || [[ -n "$repo" ]]; do
 
   if (( ${#refspecs[@]} > 0 )); then
     default_branch="$(git -C "$dir" symbolic-ref --short HEAD)"
-    if ! gh api --method PATCH "repos/$DEST_OWNER/$repo" -f default_branch="$default_branch" --silent; then
+    if [[ "$(gh api "repos/$DEST_OWNER/$repo" --jq .default_branch)" != "$default_branch" ]] &&
+        ! write_api --method PATCH "repos/$DEST_OWNER/$repo" -f default_branch="$default_branch"; then
       printf '%s\tFAILED\tGit refs pushed; could not set source default branch\n' "$repo" >> "$report"
       ((failed+=1))
       echo "::endgroup::"
@@ -172,7 +214,7 @@ done < "$REPO_LIST"
   echo "- Skipped (already existed): **$skipped**"
   echo "- Needs attention: **$failed**"
   if (( aborted )); then
-    echo "- **Stopped early:** the token could not create a repository or configure Actions. Remaining projects were not attempted."
+    echo "- **Stopped early:** review the GitHub API error above. Remaining projects were not attempted."
   fi
   echo
   echo 'Repository | Status | Details'
