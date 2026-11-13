@@ -39,3 +39,11 @@ Chrome Sync 有约 100 KB 总量 / 8 KB 单项 / 512 项的配额，适合个人
 - popup.html / dashboard.html / app.js / style.css：界面、复制、筛选、导入导出。
 
 发布 Chrome 商店前需要实际订单页面回归测试，并加上隐私声明与图标。此仓库中的开发代码不包含任何真实订单或账号数据。
+
+## 跨设备固定插件 ID
+
+开发版 manifest.json 含公开 RSA `key`，确保在不同电脑加载已解压的同一源码时使用同一扩展 ID：`bplleiohpdcmgogbalngppejabkiigmf`。请不要修改此 `key`，否则 Chrome 会视为另一个插件并无法共享原有同步存储。每台电脑仍须在 Chrome 中安装本目录并使用同一 Chrome 同步账号；仅登录购物网站不等于 Chrome 同步。
+
+## 测试状态
+
+已做源文件 JS/JSON 语法检查与模拟存储回归（转运标记不会被再次扫描覆盖）。未验证真实淘宝或拼多多已登录的页面结构、Chrome 扩展商店发布和实机多电脑同步。建议先用不含敏感资料的测试订单验证，再导入正式清单。
