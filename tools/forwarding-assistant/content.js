@@ -112,6 +112,40 @@
     }
     return Array.from(out.values()).slice(0,40);
   }
+
+  function hashReference(platform,packages){
+    let hash=2166136261;
+    for(const ch of packages.map(x=>x.no.toUpperCase()).sort().join("|")){hash^=ch.charCodeAt(0);hash=Math.imul(hash,16777619);}
+    return (platform==="pdd"?"PDD-PENDING-":"TBX-PENDING-")+(hash>>>0).toString(36).toUpperCase();
+  }
+  function currentShippingView(){
+    if(!globalThis.RuruTracking?.extract)return null;
+    const candidates=Array.from(document.querySelectorAll(
+      "[role=dialog],[aria-modal=true],[class*='Modal'],[class*='modal'],[class*='Dialog'],[class*='dialog'],[class*='Drawer'],[class*='drawer']"
+    )).filter(x=>x.getClientRects().length&&/快递单号|物流单号|运单号|物流详情/.test(x.innerText||""));
+    candidates.sort((a,b)=>(a.innerText||"").length-(b.innerText||"").length);
+    let chosen=null;
+    for(const el of candidates){
+      const t=(el.innerText||"").slice(0,30000),parsed=RuruTracking.extract(t,{allowFallback:true});
+      if(parsed.length){chosen={text:t,root:el,parsed};break;}
+    }
+    if(!chosen){
+      const context=(location.href+" "+document.title).toLowerCase();
+      if(!/logistic|shipping|express|tracking|物流详情|快递详情|运单/.test(context))return null;
+      const text=(document.body.innerText||"").slice(0,100000);
+      if(orderIds(text).length>1)return null;
+      const parsed=RuruTracking.extract(text,{allowFallback:true});
+      if(!parsed.length)return null;
+      chosen={text,root:document.body,parsed};
+    }
+    const explicit=orderIds(chosen.text),fromUrl=orderIdFromUrl();
+    const no=explicit.length===1?explicit[0]:fromUrl||hashReference(platform,chosen.parsed);
+    const products=extractProducts(chosen.root);
+    const company=(chosen.text.match(COMPANY_RE)||[])[1]||"";
+    return {platform,orderNo:no,provisional:!fromUrl&&explicit.length!==1,products,
+      packages:chosen.parsed.map(x=>({no:x.no,company,productName:products.length===1?products[0].name:""})),
+      sourceUrl:location.href};
+  }
   function isOrderContext(){
     const clue=(location.href+" "+document.title).toLowerCase();
     return /(order|trade|logistic|express|package|买到的宝贝|订单|查看物流|我的拼单|物流详情)/.test(clue);
@@ -124,7 +158,9 @@
     scanning=true; last=Date.now();
     try{
       const orders=collect();
-      if(!orders.length)return {ok:true,found:0,saved:0,tip:"没有找到可确认的订单号；请打开订单详情或手动新增"};
+      const view=currentShippingView();
+      if(view && !orders.some(r=>r.packages.some(pkg=>view.packages.some(p=>p.no===pkg.no))))orders.push(view);
+      if(!orders.length)return {ok:true,found:0,saved:0,tip:"未识别到订单号或可确认的物流信息；可在物流详情页手工核对"};
       return await chrome.runtime.sendMessage({type:"RURU_SCANNED",orders:orders});
     }catch(e){return {ok:false,error:String(e.message||e)};}
     finally{scanning=false;}
