@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "如如转运助手｜淘宝拼多多物流",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "识别淘宝和拼多多订单物流、关联商品、复制运单号、标记已转运、跨 Chrome 同步和导出备份。",
   "permissions": [
     "storage",
