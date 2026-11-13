@@ -51,7 +51,7 @@
       const k = p.no.toUpperCase(), old=pkgs.get(k);
       if (!old) pkgs.set(k,p);
       else pkgs.set(k,Object.assign({},old,{company: p.company || old.company,
-        productName:p.productName || old.productName}));
+        productName:old.productName || p.productName}));
     }
     result.packages = Array.from(pkgs.values());
     if (manual) {
