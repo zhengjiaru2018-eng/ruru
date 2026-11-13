@@ -63,7 +63,7 @@ async function scanDetails(id,row,p,listUrl){
  if(target){
   attempted=true;
   await visit(id,target,p);
-  details=await message(id,"RURU_CRAWL_EXTRACT",{orderNo:no});
+  details=await message(id,"RURU_CRAWL_EXTRACT",{orderNo:no,products:row.products||[]});
   if(details?.verification)throw Error("需要完成账号验证");
   if(details?.ok){await saveOrder(details.order,p);found+=details.found||0;}
   else if(details?.error)throw Error(details.error);
@@ -71,7 +71,7 @@ async function scanDetails(id,row,p,listUrl){
   const logistics=(details?.links?.logistics||[]).find(u=>eligible(u,p)&&u!==target);
   if(!found && logistics){
    await visit(id,logistics,p);
-   const again=await message(id,"RURU_CRAWL_EXTRACT",{orderNo:no});
+   const again=await message(id,"RURU_CRAWL_EXTRACT",{orderNo:no,products:row.products||[]});
    if(again?.verification)throw Error("需要完成账号验证");
    if(again?.ok){await saveOrder(again.order,p);found+=again.found||0;}
   }
@@ -79,24 +79,24 @@ async function scanDetails(id,row,p,listUrl){
  if(!found){
   // Fallback for SPA sites that use a button without a normal URL.
   await visit(id,listUrl,p);
-  const clicked=await message(id,"RURU_CRAWL_CLICK",{orderNo:no,kind:"logistics"}).catch(()=>null);
+  const clicked=await message(id,"RURU_CRAWL_CLICK",{orderNo:no,kind:"logistics",products:row.products||[]}).catch(()=>null);
   if(clicked?.ok){
    attempted=true;
    if(clicked.result?.ok){await saveOrder(clicked.result.order,p);found+=clicked.result.found||0;}
    if(!found){
     await pause(900);
-    const again=await message(id,"RURU_CRAWL_EXTRACT",{orderNo:no}).catch(()=>null);
+    const again=await message(id,"RURU_CRAWL_EXTRACT",{orderNo:no,products:row.products||[]}).catch(()=>null);
     if(again?.ok){await saveOrder(again.order,p);found+=again.found||0;}
    }
   }else if(!target){
-   const detail=await message(id,"RURU_CRAWL_CLICK",{orderNo:no,kind:"detail"}).catch(()=>null);
+   const detail=await message(id,"RURU_CRAWL_CLICK",{orderNo:no,kind:"detail",products:row.products||[]}).catch(()=>null);
    if(detail?.ok){
     attempted=true;
     if(detail.result?.ok){await saveOrder(detail.result.order,p);found+=detail.result.found||0;}
     const link=(detail.result?.links?.logistics||[]).find(u=>eligible(u,p));
     if(!found&&link){
      await visit(id,link,p);
-     const again=await message(id,"RURU_CRAWL_EXTRACT",{orderNo:no});
+     const again=await message(id,"RURU_CRAWL_EXTRACT",{orderNo:no,products:row.products||[]});
      if(again?.ok){await saveOrder(again.order,p);found+=again.found||0;}
     }
    }
