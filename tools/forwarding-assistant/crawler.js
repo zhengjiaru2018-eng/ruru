@@ -10,7 +10,7 @@ const isOrder=no=>/^[0-9A-Za-z_-]{10,42}$/.test(no||"");
 const matches=(re,s)=>[...new Set([...s.matchAll(re)].map(x=>x[1]))];
 const ids=s=>matches(ORDER,s);
 const short=s=>String(s||"").replace(/\s+/g," ").trim();
-const txt=el=>String(el?.innerText||"").slice(0,19000);
+const txt=el=>String(el?.innerText||el?.textContent||"").slice(0,120000);
 function url(href){
  try{
   const u=new URL(href,location.href);
@@ -68,7 +68,7 @@ function links(el){
 }
 
 function packageRows(root,candidates,orderNo){
- const body=txt(root),ns=matches(TRACK,body).filter(x=>x!==orderNo),cm=body.match(COMPANY);
+ const body=txt(root),ns=RuruTracking.extract(body,{allowFallback:false}).map(x=>x.no).filter(x=>x!==orderNo),cm=body.match(COMPANY);
  return ns.map(no=>{
   let productName=candidates.length===1?candidates[0].name:"";
   if(!productName && candidates.length>1){
@@ -80,7 +80,7 @@ function packageRows(root,candidates,orderNo){
      const t=txt(el);
      if(t.length>5000)break;
      const names=candidates.filter(p=>t.includes(p.name));
-     if(names.length===1 && matches(TRACK,t).filter(x=>x!==orderNo).length===1){
+     if(names.length===1 && RuruTracking.extract(t,{allowFallback:false}).filter(x=>x.no!==orderNo).length===1){
       productName=names[0].name;break;
      }
     }
@@ -130,14 +130,22 @@ function discover(){
 }
 function extract(no,knownProducts=[]){
  if(!isOrder(no))return {ok:false,error:"无效的源订单号"};
- const body=txt(document.body),found=ids(body);
+ const overlay=visibleShippingScope();
+ const body=overlay?overlay.text:txt(document.body);
+ const found=ids(body);
  let urlId="";
- try{for(const [k,v] of new URL(location.href).searchParams){if(/^(order_id|orderid|order_no|orderno|tradeid|trade_id)$/i.test(k)&&isOrder(v)){urlId=v;break;}}}catch(e){}
- if((urlId&&urlId!==no)||(found.length===1&&found[0]!==no)||found.length>1)
-  return {ok:false,error:"页面的订单号与原订单不一致，已拒绝关联"};
- const p=products(document.body),candidates=p.length?p:Array.isArray(knownProducts)?knownProducts.slice(0,30):[];
- const packages=packageRows(document.body,candidates,no);
- return {ok:true,order:{platform,orderNo:no,products:p,packages,sourceUrl:location.href},links:links(document.body),found:packages.length,verification:/(滑块验证|请完成验证|验证码|安全验证|登录后查看)/.test(body.slice(0,1000))};
+ try{for(const [k,v] of new URL(location.href).searchParams)
+  if(/^(order_id|orderid|order_no|orderno|tradeid|trade_id)$/i.test(k)&&isOrder(v)){urlId=v;break;}}catch(e){}
+ if((urlId&&urlId!==no&&!overlay)||(found.length===1&&found[0]!==no)||
+  (found.length>1&&!overlay))return {ok:false,error:"页面订单号不一致或多个订单共用页面，拒绝猜测"};
+ const root=overlay?overlay.el:document.body;
+ const fromPage=products(root),candidates=fromPage.length?fromPage:
+   Array.isArray(knownProducts)?knownProducts.slice(0,30):[];
+ const packages=packageRows(root,candidates,no);
+ return {ok:true,order:{platform,orderNo:no,products:fromPage,packages,sourceUrl:location.href},
+  links:links(root),found:packages.length,modal:!!overlay,
+  diagnosis:packages.length?"found":overlay?"modal-visible-but-number-not-recognized":"no-explicit-number",
+  verification:/(滑块验证|请完成验证|验证码|安全验证|登录后查看)/.test(body.slice(0,1500))};
 }
 async function clickView(no,k,knownProducts=[]){
  const matcher=k==="logistics"?READ_LOG:READ_DETAIL,bodyIds=ids(txt(document.body));
@@ -236,32 +244,65 @@ function pddRows(){
   return {index,fingerprint,orderNo,products:p,cardText:signature.slice(0,80)};
  });
 }
-function pddTracks(s){
- return [...new Set([...s.matchAll(TRACK)].map(m=>m[1]))].filter(n=>/^[0-9A-Za-z-]{8,48}$/.test(n));
+
+function visibleShippingDialogs(){
+ const selector=[
+  "[role='dialog']","[aria-modal='true']",
+  "[class*='modal']","[class*='Modal']","[class*='dialog']","[class*='Dialog']",
+  "[class*='drawer']","[class*='Drawer']","[class*='popup']","[class*='Popup']",
+  "[data-state='open']"
+ ].join(",");
+ return Array.from(document.querySelectorAll(selector)).slice(-550).filter(el=>{
+  if(!el.getClientRects().length)return false;
+  const style=getComputedStyle(el);
+  if(style.display==="none"||style.visibility==="hidden")return false;
+  const t=txt(el);
+  return t.length>=12 && t.length<=32000 && /物流|快递|运单|包裹|追踪|快件|tracking/i.test(t);
+ }).map(el=>{
+  const t=txt(el);
+  const hits=RuruTracking.extract(t,{allowFallback:true});
+  return {el,text:t,hits};
+ }).sort((a,b)=>{
+  const ax=a.hits.filter(x=>x.reason!=="single-candidate").length;
+  const bx=b.hits.filter(x=>x.reason!=="single-candidate").length;
+  if(ax!==bx)return bx-ax;
+  if(a.hits.length!==b.hits.length)return b.hits.length-a.hits.length;
+  return a.text.length-b.text.length;
+ });
+}
+function visibleShippingScope(){
+ const dialogs=visibleShippingDialogs();
+ return dialogs[0]||null;
+}
+
+function pddTracks(s,allowFallback=false){
+ return RuruTracking.extract(s,{allowFallback}).map(x=>x.no);
 }
 function pddResult(root,prior,row){
  const all=txt(root);
- const dialogs=Array.from(document.querySelectorAll("[role=dialog],[aria-modal=true],[class*='modal'],[class*='Modal'],[class*='drawer'],[class*='Drawer'],[class*='popup'],[class*='Popup']")).filter(el=>{
-  const t=txt(el);
-  return t.length>12&&t.length<12000&&/物流|快递|运单|包裹/.test(t)&&el.getClientRects().length>0;
- });
- let scoped=dialogs.sort((a,b)=>txt(a).length-txt(b).length)[0];
- let source=txt(scoped||root);
- let nos=pddTracks(source).filter(n=>n!==row.orderNo);
- // In a popup the rest of the order list should not be associated with the clicked card.
+ const overlay=visibleShippingScope();
+ const scoped=overlay?.el||null;
+ const source=scoped?overlay.text:all;
+ let nos=scoped?overlay.hits.map(x=>x.no):pddTracks(source,false);
+ nos=nos.filter(no=>no!==row.orderNo);
+ // Only use a before/after delta if the same list still contains multiple orders.
  if(!scoped){
-  const changed=pddTracks(all).filter(n=>!prior.has(n)&&n!==row.orderNo);
-  if(changed.length>0&&changed.length<=10)nos=changed;
-  else if(pddActions().length>1)nos=[]; // Multiple cards remain, so ambiguous.
+  const changed=pddTracks(all,false).filter(no=>!prior.has(no)&&no!==row.orderNo);
+  if(changed.length>=1&&changed.length<=10)nos=changed;
+  else if(pddActions().length>1)nos=[];
+  else nos=pddTracks(all,true).filter(no=>no!==row.orderNo);
  }
- nos=nos.slice(0,12);
- const nums=ids(source),realNo=isOrder(row.orderNo)?row.orderNo:nums.length===1?nums[0]:"";
+ nos=[...new Set(nos)].slice(0,12);
+ const orderNumbers=ids(source);
+ const realNo=isOrder(row.orderNo)?row.orderNo:orderNumbers.length===1?orderNumbers[0]:"";
  const carrier=source.match(COMPANY)?.[1]||"";
- const product=row.products||[];
+ const product=Array.isArray(row.products)?row.products:[];
  return {ok:true,orderNo:realNo,products:product,
   packages:nos.map(no=>({no,company:carrier,productName:product.length===1?product[0].name:""})),
   found:nos.length,needsReview:!realNo,modal:!!scoped,
-  verification:/(滑块验证|请完成验证|验证码|安全验证|登录后查看)/.test(all.slice(0,1000))};
+  diagnosis:nos.length?"found":scoped?"modal-visible-but-number-not-recognized":
+    "no-modal-or-unique-number",hasLogisticsText:/物流|运单|快递|tracking/i.test(source),
+  verification:/(滑块验证|请完成验证|验证码|安全验证|登录后查看)/.test(all.slice(0,1500))};
 }
 async function pddDiscover(){
  if(platform!=="pdd")return {ok:false,error:"这不是拼多多页面"};
@@ -282,28 +323,31 @@ async function pddOpen(msg){
  if(!row||row.fingerprint!==expected)return {ok:false,error:"订单列表顺序发生变化；为了避免串单，已跳过"};
  const target=pddActions()[index];
  if(!target)return {ok:false,error:"找不到对应的查看物流按钮"};
- const prior=new Set(pddTracks(txt(document.body)));
+ const prior=new Set(pddTracks(txt(document.body),false));
  target.scrollIntoView({block:"center",behavior:"instant"});
  await new Promise(r=>setTimeout(r,200));
  // Never click the adjacent 确认收货 / 退款 buttons.
  if(short(target.innerText||target.textContent).replace(/\s+/g,"")!=="查看物流")
   return {ok:false,error:"按钮文字不再是查看物流，已拒绝点击"};
  target.click();
- await new Promise(r=>setTimeout(r,1650));
- const result=pddResult(document.body,prior,row);
+ let result=null;
+ for(let poll=0;poll<7;poll++){
+  await new Promise(r=>setTimeout(r,poll===0?700:550));
+  result=pddResult(document.body,prior,row);
+  if(result.found||result.verification)break;
+ }
  return {ok:true,result,current:location.href,clicked:true};
 }
 function pddExtractDetail(msg){
  const row={orderNo:msg.orderNo||"",products:Array.isArray(msg.products)?msg.products.slice(0,15):[]};
- const page=txt(document.body);
- const idsOnPage=ids(page);
- if(idsOnPage.length>1)return {ok:false,error:"当前页面仍有多笔订单，无法唯一关联运单"};
- if(idsOnPage.length===1&&isOrder(row.orderNo)&&idsOnPage[0]!==row.orderNo)
-  return {ok:false,error:"订单号不一致"};
- if(!row.products.length && !isOrder(row.orderNo))
-  return {ok:false,error:"无法将新页面可靠关联到原始商品"};
  const outcome=pddResult(document.body,new Set(),row);
- if(pddActions().length>1&&!outcome.modal)return {ok:false,error:"仍是订单列表，无法确认单号对应关系"};
+ const numbers=ids(outcome.modal?visibleShippingScope().text:txt(document.body));
+ if(numbers.length>1&&!outcome.modal)return {ok:false,error:"当前页面存在多笔订单且无独立物流弹窗"};
+ if(numbers.length===1&&isOrder(row.orderNo)&&numbers[0]!==row.orderNo)
+  return {ok:false,error:"详情页订单号不一致"};
+ if(!row.products.length&&!isOrder(row.orderNo))
+  return {ok:false,error:"商品上下文不明确，不能关联物流"};
+ if(pddActions().length>1&&!outcome.modal)return {ok:false,error:"当前仍是多订单列表，无法确定运单与商品的关系"};
  return outcome;
 }
 chrome.runtime.onMessage.addListener((msg,sender,send)=>{
