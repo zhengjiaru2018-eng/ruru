@@ -178,14 +178,12 @@ function pddActions(){
  }
  return out;
 }
-function pddCard(target){
+function pddCard(target,actions){
  let el=target,best=target.parentElement||target;
  for(let i=0;el&&el!==document.body&&i<14;el=el.parentElement,i++){
   const s=txt(el);
   if(s.length>3400)break;
-  const controls=Array.from(el.querySelectorAll("button,a,[role='button'],[class*='btn'],[class*='button']")).filter(
-   a=>short(a.innerText||a.textContent).replace(/\s+/g,"")==="查看物流");
-  if(controls.length>1)break;
+  if(actions.filter(a=>el.contains(a)).length>1)break;
   if(s.length>22 && (el.querySelector("img")||el.querySelector("a[href*='goods']")))best=el;
  }
  return best;
@@ -221,8 +219,9 @@ function pddHash(s){
  return (h>>>0).toString(36);
 }
 function pddRows(){
- return pddActions().map((target,index)=>{
-  const card=pddCard(target),p=pddProduct(card),orderNo=pddOrderNo(card);
+ const actions=pddActions();
+ return actions.map((target,index)=>{
+  const card=pddCard(target,actions),p=pddProduct(card),orderNo=pddOrderNo(card);
   const signature=short(txt(card)).slice(0,650);
   const fingerprint=pddHash([index,orderNo,p.map(x=>x.name).join("|"),signature].join("::"));
   return {index,fingerprint,orderNo,products:p,cardText:signature.slice(0,80)};
