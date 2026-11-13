@@ -117,6 +117,19 @@ async function scanDetails(id,row,p,listUrl){
    if(again?.verification)throw Error("需要完成账号验证");
    if(again?.ok){await saveOrder(again.order,p);found+=again.found||0;}
   }
+  if(!found){
+   const beforeTabs=new Set((await chrome.tabs.query({})).map(t=>t.id));
+   const tapped=await message(id,"RURU_CRAWL_CLICK",{orderNo:no,kind:"logistics",products:row.products||[]}).catch(()=>null);
+   if(tapped?.result?.ok){await saveOrder(tapped.result.order,p);found+=tapped.result.found||0;}
+   if(!found){
+    const iframe=await readFromAllFrames(id,p,"RURU_CRAWL_EXTRACT",{orderNo:no,products:row.products||[]});
+    if(iframe?.ok){await saveOrder(iframe.order,p);found+=iframe.found||0;}
+   }
+   if(!found){
+    const opened=await readNewShippingTabs(id,beforeTabs,p,"RURU_CRAWL_EXTRACT",{orderNo:no,products:row.products||[]});
+    if(opened?.ok){await saveOrder(opened.order,p);found+=opened.found||0;}
+   }
+  }
  }
  if(!found){
   // Fallback for SPA sites that use a button without a normal URL.
@@ -136,6 +149,9 @@ async function scanDetails(id,row,p,listUrl){
     if(fromNew?.ok){await saveOrder(fromNew.order,p);found+=fromNew.found||0;}
    }
   }else if(!target){
+   const opened=await readNewShippingTabs(id,priorTabs,p,"RURU_CRAWL_EXTRACT",{orderNo:no,products:row.products||[]});
+   if(opened?.ok){await saveOrder(opened.order,p);found+=opened.found||0;}
+   if(found)return {found,attempted:true};
    const detail=await message(id,"RURU_CRAWL_CLICK",{orderNo:no,kind:"detail",products:row.products||[]}).catch(()=>null);
    if(detail?.ok){
     attempted=true;
@@ -208,6 +224,7 @@ async function runPddJob(startUrl){
     let result=clicked?.result||null;
     const actual=await chrome.tabs.get(work.id);
     if(!eligible(actual.url||"","pdd"))throw Error("购物平台跳转到其他域名或登录验证，请手动处理");
+    if(actual.url!==beforeUrl)await tabReady(work.id);
     if(!numberCount(result)){
      const extracted=await readFromAllFrames(work.id,"pdd","RURU_PDD_EXTRACT",{
       orderNo:current.orderNo||"",products:current.products||[]});
