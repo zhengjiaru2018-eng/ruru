@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "如如转运助手｜淘宝拼多多物流",
-  "version": "0.2.1",
-  "description": "淘宝与拼多多批量打开订单物流，自动抓取运单、关联商品、一键复制及转运管理",
+  "version": "0.3.0",
+  "description": "淘宝 Excel 可勾选导入商品，淘宝拼多多自动读取物流，一键复制运单、转运标记、跨电脑同步",
   "permissions": [
     "storage",
     "tabs",
