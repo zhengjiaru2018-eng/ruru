@@ -17,3 +17,10 @@ input:focus,select:focus,textarea:focus{outline:2px solid #8bd9d3;outline-offset
 footer{margin-top:18px;padding-top:12px;border-top:1px solid var(--line);font-size:11px;color:var(--muted);display:flex;align-items:center;flex-wrap:wrap;gap:10px}.footer-note{margin-left:auto}
 dialog{border:0;border-radius:15px;padding:22px;box-shadow:0 24px 90px #0003;max-width:90vw;width:400px}dialog::backdrop{background:#172c3980}dialog form{display:grid;gap:11px}dialog h2{margin:0 0 3px;font-size:19px}dialog label{display:grid;gap:6px;color:var(--muted);font-size:12px}dialog label input,dialog label select,dialog label textarea{width:100%}.dialog-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:6px}
 .dashboard .list{grid-template-columns:repeat(auto-fit,minmax(325px,1fr));align-items:start}.dashboard .order-card{min-height:230px}@media(max-width:600px){.dashboard .layout{padding:14px}.dashboard .list{display:block}.dashboard .order-card{margin-bottom:10px}.stats>div{padding:11px 8px}.action-row button{flex:1}}
+
+.batch-box{border-radius:12px;background:linear-gradient(135deg,#eaf7f6,#f4faf7);border:1px solid #cce6e2;padding:11px 12px;margin:0 0 13px}
+.batch-heading{font-weight:800;color:#086760;font-size:14px;margin-bottom:4px}
+.batch-box p{font-size:11px;line-height:1.5;color:#557b7d;margin-bottom:8px}
+.batch-box .action-row button.primary{flex:1;background:#086f68}
+.crawl-progress{font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6;color:#326665;margin-top:5px;max-height:100px;overflow:auto}
+button[hidden]{display:none!important}
