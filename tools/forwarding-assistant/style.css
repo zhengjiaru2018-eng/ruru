@@ -26,3 +26,23 @@ dialog{border:0;border-radius:15px;padding:22px;box-shadow:0 24px 90px #0003;max
 button[hidden]{display:none!important}
 
 .provisional{font-weight:700;color:#b16a13;font-size:11px;word-break:break-all}
+
+/* Selectable Taobao Excel import and batch shipping actions */
+.import-launch{width:100%;background:#e5f4ed!important;color:#087458!important;border:1px solid #c4e4d5!important;text-align:center;font-weight:800}
+.importer .layout{max-width:1100px}.import-upload{padding:20px;background:white;border:1px dashed #a4c7c4;border-radius:16px;margin:12px 0 18px}
+.drop-label{display:flex;flex-direction:column;align-items:flex-start;gap:4px;font-size:16px;color:var(--ink)}
+.drop-label span{font-size:12px;color:var(--muted)}.import-upload input[type=file]{margin:15px 0 10px;max-width:100%}
+.import-overview{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}
+.import-overview>div{background:white;border:1px solid var(--line);border-radius:12px;padding:14px}
+.import-overview b{font-size:22px;display:block}.import-overview small{display:block;color:var(--muted);font-size:11px}
+.selection-actions{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding-top:10px}
+.import-list{display:grid;gap:8px}.import-row{background:white;border:1px solid var(--line);border-radius:11px;padding:13px;display:flex;justify-content:space-between;gap:12px;align-items:center}
+.import-row.checked{border-color:#5fae9f;background:#f1faf7}.import-check{display:flex;gap:13px;align-items:flex-start;flex:1;min-width:0;cursor:pointer}
+.import-check input{margin-top:2px;width:17px;height:17px;accent-color:var(--teal);flex-shrink:0}
+.import-content{display:flex;flex-direction:column;gap:7px;min-width:0}.import-content strong{line-height:1.5;font-size:13px;overflow-wrap:anywhere}
+.import-meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px;color:var(--muted)}
+.import-meta code{word-break:break-all;color:var(--ink)}.shipped{color:#087458;font-weight:800}.waiting{color:#a96516;font-weight:800}
+.selection-bar{padding:10px 13px;background:#fff;border:1px solid var(--line);border-radius:12px;margin:10px 0;color:var(--muted);font-size:12px}
+.selection-bar .action-row{margin-top:8px}.selection-bar button{padding:7px 10px}
+.product.selectable{display:inline-flex;align-items:center;gap:7px;cursor:pointer}.product.selectable input{width:15px;height:15px;accent-color:var(--teal)}
+@media(max-width:680px){.import-overview{grid-template-columns:repeat(2,1fr)}.import-row{align-items:flex-start}.selection-actions button{width:100%}}
