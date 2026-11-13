@@ -3,12 +3,32 @@
   "name": "如如转运助手｜淘宝拼多多物流",
   "version": "0.1.0",
   "description": "识别淘宝和拼多多订单物流、关联商品、复制运单号、标记已转运、跨 Chrome 同步和导出备份。",
-  "permissions": ["storage", "tabs", "activeTab"],
-  "action": { "default_title": "如如转运助手", "default_popup": "popup.html" },
+  "permissions": [
+    "storage",
+    "tabs",
+    "activeTab"
+  ],
+  "action": {
+    "default_title": "如如转运助手",
+    "default_popup": "popup.html"
+  },
   "options_page": "dashboard.html",
-  "background": { "service_worker": "background.js" },
-  "content_scripts": [{
-    "matches": ["*://*.taobao.com/*", "*://*.tmall.com/*", "*://*.pinduoduo.com/*", "*://*.yangkeduo.com/*"],
-    "js": ["content.js"], "run_at": "document_idle"
-  }]
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.taobao.com/*",
+        "*://*.tmall.com/*",
+        "*://*.pinduoduo.com/*",
+        "*://*.yangkeduo.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnTm2N70Af4hB17XUOq7GJhm4i2cX6ws0hREqbdzj3szFf+p5ot9Ce/UV80Zqg4fQV1v/h3i33Mwp8ROLb3yel2f6vKIGGJ8DMxPcOtwgK8C3zicURuYYRoBcU4u3aDQu9VAQstWUFJEEnfqheGx/14FGi78yM+CL4K0wFWZn9oEgZVHzS8bQo/JkX/gSfLpyWmd40NQb7knEWxT3NpkGnTTprMvekQSbZokBNALLBC96xoa/Y6BxZcjgoplbA4uD4q41LJ0GNVea9ele7NbGDjZeGF55ghyjr2Zxr08KTuZr+WFGqW/oTWopZjm8r42CnLwoRXEvrVM7qEUrWdiYbQIDAQAB"
 }
