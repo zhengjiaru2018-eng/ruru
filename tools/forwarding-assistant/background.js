@@ -104,7 +104,100 @@ async function scanDetails(id,row,p,listUrl){
  }
  return {found,attempted};
 }
+
+function shipmentFingerprint(pkgs){
+ const str=pkgs.map(p=>p.no.toUpperCase()).sort().join("|");
+ let hash=2166136261;
+ for(const c of str){hash^=c.charCodeAt(0);hash=Math.imul(hash,16777619);}
+ // Deliberately NOT a real order number; the UI marks it as pending verification.
+ return "PDD-PENDING-"+(hash>>>0).toString(36).toUpperCase();
+}
+async function savePddResult(result,sourceUrl){
+ if(!result?.ok||!Array.isArray(result.packages)||!result.packages.length)return {saved:false,reason:"物流页面没有可确认的运单号"};
+ const packages=result.packages.filter(p=>/^[0-9A-Za-z-]{8,48}$/.test(p.no||"")).slice(0,20);
+ if(!packages.length)return {saved:false,reason:"运单号格式无法确认"};
+ const verified=/^[0-9A-Za-z_-]{10,42}$/.test(result.orderNo||"");
+ const orderNo=verified?result.orderNo:shipmentFingerprint(packages);
+ const record={platform:"pdd",orderNo,provisional:!verified,
+  products:Array.isArray(result.products)?result.products.slice(0,20):[],
+  packages,sourceUrl};
+ const saved=await RuruStore.upsert(record,false);
+ return {saved:saved.synced||saved.unchanged,localOnly:!saved.synced,
+  count:packages.length,provisional:!verified};
+}
+async function runPddJob(startUrl){
+ let work=null,blocked=false,done=0,found=0,failed=[];
+ running=true;
+ try{
+  await updateJob({state:"running",platform:"pdd",completed:0,found:0,total:0,page:1,
+   current:"分析拼多多商品卡片中的查看物流入口",errors:[],cancelRequested:false,startedAt:Date.now()});
+  work=await chrome.tabs.create({url:startUrl,active:false});
+  await updateJob({workerTabId:work.id});
+  await tabReady(work.id);
+  const data=await message(work.id,"RURU_PDD_DISCOVER");
+  if(!data.ok||!data.rows?.length){
+   blocked=true;
+   throw Error("没有识别到拼多多「查看物流」商品卡片。请确认当前打开的是已购买订单列表，而非购物车，并检查是否需要登录。");
+  }
+  const queue=data.rows.slice(0,40);
+  await updateJob({total:queue.length,current:"识别到 "+queue.length+" 个带查看物流的商品卡片"});
+  for(const row of queue){
+   if(await isCancelled())break;
+   await updateJob({current:"逐单查看 "+(row.products?.[0]?.name||"商品").slice(0,44),
+    completed:done,found:found});
+   try{
+    await visit(work.id,startUrl,"pdd");
+    const refreshed=await message(work.id,"RURU_PDD_DISCOVER");
+    const current=refreshed?.rows?.find(x=>x.fingerprint===row.fingerprint);
+    if(!current)throw Error("网页卡片顺序变化，已跳过以避免配错运单");
+    const beforeUrl=(await chrome.tabs.get(work.id)).url;
+    let clicked=null;
+    try{
+     clicked=await message(work.id,"RURU_PDD_OPEN",{index:current.index,fingerprint:current.fingerprint});
+    }catch(e){
+     // SPA full navigation can close the content script port; inspect only the newly opened read-only page.
+    }
+    let result=clicked?.result||null;
+    const actual=await chrome.tabs.get(work.id);
+    if(!eligible(actual.url||"","pdd"))throw Error("购物平台跳转到其他域名或登录验证，请手动处理");
+    if((!result||!result.packages?.length)&&actual.url!==beforeUrl){
+     await tabReady(work.id);
+     const extracted=await message(work.id,"RURU_PDD_EXTRACT",{
+      orderNo:current.orderNo||"",products:current.products||[]}).catch(()=>null);
+     if(extracted?.ok)result=extracted;
+    }
+    if(result?.verification){blocked=true;throw Error("拼多多要求登录/安全验证");}
+    const outcome=await savePddResult(result,startUrl);
+    if(outcome.saved){found+=outcome.count;if(outcome.localOnly)failed.push("Chrome 同步失败，已保留本地记录");}
+    else failed.push("商品 "+(current.products?.[0]?.name||"未知").slice(0,24)+"："+outcome.reason);
+   }catch(e){
+    const messageText=String(e.message||e);
+    failed.push("商品 "+(row.products?.[0]?.name||"未知").slice(0,20)+"："+messageText.slice(0,100));
+    if(/验证|登录|其他域名/.test(messageText)){blocked=true;break;}
+   }
+   done++;
+   await updateJob({completed:done,found:found,errors:failed.slice(-15),
+    current:"已查看 "+done+" 个商品卡片，保存 "+found+" 个运单号"});
+   await pause(550);
+  }
+  const cancelled=await isCancelled();
+  await updateJob({state:cancelled?"stopped":blocked?"needs-attention":"done",
+   completed:done,found:found,errors:failed.slice(-15),
+   current:cancelled?"用户已停止":blocked?"需要手动登录/验证":"拼多多当前加载的商品卡片抓取结束",
+   finishedAt:Date.now()});
+ }catch(e){
+  blocked=true;
+  await updateJob({state:"needs-attention",current:"拼多多抓取停止",
+   errors:[...failed,String(e.message||e)].slice(-15),completed:done,found,finishedAt:Date.now()});
+ }finally{
+  running=false;
+  if(work?.id){
+   try{if(blocked)await chrome.tabs.update(work.id,{active:true});else await chrome.tabs.remove(work.id);}catch(e){}
+  }
+ }
+}
 async function runJob(platform,startUrl){
+ if(platform==="pdd")return runPddJob(startUrl);
  let work=null,blocked=false,job=null;
  running=true;
  try{
