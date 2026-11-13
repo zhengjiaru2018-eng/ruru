@@ -66,9 +66,33 @@ function links(el){
  out.detail=out.detail.slice(0,5);out.logistics=out.logistics.slice(0,5);
  return out;
 }
+
+function packageRows(root,candidates,orderNo){
+ const body=txt(root),ns=matches(TRACK,body).filter(x=>x!==orderNo),cm=body.match(COMPANY);
+ return ns.map(no=>{
+  let productName=candidates.length===1?candidates[0].name:"";
+  if(!productName && candidates.length>1){
+   const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
+   let node,count=0;
+   while((node=walker.nextNode())&&++count<22000){
+    if(!node.textContent?.includes(no))continue;
+    for(let el=node.parentElement,d=0;el&&el!==root.parentElement&&d<7;el=el.parentElement,d++){
+     const t=txt(el);
+     if(t.length>5000)break;
+     const names=candidates.filter(p=>t.includes(p.name));
+     if(names.length===1 && matches(TRACK,t).filter(x=>x!==orderNo).length===1){
+      productName=names[0].name;break;
+     }
+    }
+    if(productName)break;
+   }
+  }
+  return {no,company:cm?.[1]||"",productName};
+ });
+}
 function record(el,no){
  const p=products(el),m=txt(el).match(COMPANY);
- return {orderNo:no,products:p,packages:matches(TRACK,txt(el)).filter(x=>x!==no).map(x=>({no:x,company:m?.[1]||"",productName:p.length===1?p[0].name:""})),links:links(el)};
+ return {orderNo:no,products:p,packages:packageRows(el,p,no),links:links(el)};
 }
 function discover(){
  const candidates=[],seen=new Set();
@@ -104,15 +128,15 @@ function discover(){
  }
  return {rows:[...rows.values()].slice(0,80),next,platform,current:location.href};
 }
-function extract(no){
+function extract(no,knownProducts=[]){
  if(!isOrder(no))return {ok:false,error:"无效的源订单号"};
  const body=txt(document.body),found=ids(body);
  let urlId="";
  try{for(const [k,v] of new URL(location.href).searchParams){if(/^(order_id|orderid|order_no|orderno|tradeid|trade_id)$/i.test(k)&&isOrder(v)){urlId=v;break;}}}catch(e){}
- if((urlId&&urlId!==no)||(found.length===1&&found[0]!==no)||(found.length>1&&!found.includes(no)))
+ if((urlId&&urlId!==no)||(found.length===1&&found[0]!==no)||found.length>1)
   return {ok:false,error:"页面的订单号与原订单不一致，已拒绝关联"};
- const p=products(document.body),m=body.match(COMPANY);
- const packages=matches(TRACK,body).filter(x=>x!==no).map(x=>({no:x,company:m?.[1]||"",productName:p.length===1?p[0].name:""}));
+ const p=products(document.body),candidates=p.length?p:Array.isArray(knownProducts)?knownProducts.slice(0,30):[];
+ const packages=packageRows(document.body,candidates,no);
  return {ok:true,order:{platform,orderNo:no,products:p,packages,sourceUrl:location.href},links:links(document.body),found:packages.length,verification:/(滑块验证|请完成验证|验证码|安全验证|登录后查看)/.test(body.slice(0,1000))};
 }
 async function clickView(no,k){
@@ -132,7 +156,7 @@ chrome.runtime.onMessage.addListener((msg,sender,send)=>{
  if(!msg || !/^RURU_CRAWL_/.test(msg.type||""))return false;
  (async()=>{
   if(msg.type==="RURU_CRAWL_DISCOVER")return discover();
-  if(msg.type==="RURU_CRAWL_EXTRACT")return extract(String(msg.orderNo||""));
+  if(msg.type==="RURU_CRAWL_EXTRACT")return extract(String(msg.orderNo||""),msg.products||[]);
   if(msg.type==="RURU_CRAWL_CLICK")return clickView(String(msg.orderNo||""),msg.kind==="logistics"?"logistics":"detail");
   return {ok:false,error:"未知请求"};
  })().then(send).catch(e=>send({ok:false,error:String(e.message||e)}));
