@@ -4,6 +4,7 @@
   const $=id=>document.getElementById(id);
   const isPopup=document.body.classList.contains("popup");
   let orders=[],refreshing=false,refreshQueued=false;
+  const selectedGoods=new Set();
   function safe(v){return String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
   function date(v){return v?new Date(v).toLocaleString("zh-CN",{year:"numeric",month:"2-digit",day:"2-digit"}):"";}
   function setNotice(msg,warn){const n=$("notice");n.textContent=msg||"";n.classList.toggle("warn",!!warn);}
@@ -12,6 +13,28 @@
     const count=r.packages.filter(p=>p.transferred).length;
     if(count===r.packages.length)return "done";
     return "pending";
+  }
+  function chosenShipments(){
+    const shipments=new Map(),unmatched=[],picked=[];
+    for(const r of orders)for(const p of r.products){
+      const token=r.key+"::"+p.name;
+      if(!selectedGoods.has(token))continue;
+      picked.push({order:r,product:p});
+      const possible=r.packages.length===1?r.packages:r.packages.filter(pkg=>pkg.productName===p.name);
+      if(!possible.length){unmatched.push(p.name);continue;}
+      for(const pkg of possible)shipments.set(r.key+"|"+pkg.no,{key:r.key,no:pkg.no,company:pkg.company});
+    }
+    return {picked,shipments:[...shipments.values()],unmatched};
+  }
+  function renderSelected(){
+    const {picked,shipments,unmatched}=chosenShipments();
+    $("selectedInfo").textContent=picked.length?
+      "已选 "+picked.length+" 件商品 · 可对应 "+shipments.length+" 个运单"+
+      (unmatched.length?" · "+unmatched.length+" 件待确认物流关系":""):
+      "勾选商品后可批量复制对应运单";
+    $("batchCopy").disabled=!shipments.length;
+    $("batchTransferred").disabled=!shipments.length;
+    $("clearSelection").disabled=!picked.length;
   }
   function countStats(){
     let pending=0,done=0;
@@ -29,7 +52,7 @@
       (!q || [r.orderNo,r.note,...r.products.map(p=>p.name),...r.packages.map(p=>p.no),...r.packages.map(p=>p.company)].join(" ").toLowerCase().includes(q)));
     const total=rows.length;
     if(isPopup)rows=rows.slice(0,15);
-    if(!rows.length){$("list").innerHTML='<div class="empty">还没有匹配的订单。打开订单或物流详情页后点击「抓取当前页面」，也可以手动新增。</div>';return;}
+    if(!rows.length){$("list").innerHTML='<div class="empty">还没有匹配的订单。可以导入淘宝 Excel、抓取物流或手动新增。</div>';renderSelected();return;}
     $("list").innerHTML=rows.map(r=>{
       const status=getState(r),hasMany=r.products.length>1&&r.packages.length>1;
       const packageHtml=r.packages.length?r.packages.map(p=>{
@@ -49,7 +72,7 @@
         (r.platform==="pdd"?"拼多多":"淘宝/天猫")+'</span> '+(r.provisional?'<span class="provisional">订单号待核对 · '+safe(r.orderNo)+'</span>':safe(r.orderNo))+'</div>'+
         '<div class="date">更新 '+safe(date(r.updatedAt))+(r.syncPending?' · 仅本机，待同步':'')+'</div></div>'+
         '<span class="status '+(status==="done"?"done":"")+'">'+(status==="done"?"✓ 已完成":status==="noTracking"?"待补运单":"进行中")+'</span></div>'+
-        '<div class="products">'+(r.products.length?r.products.map(p=>'<span class="product" title="'+safe(p.name)+'">'+safe(p.name)+'</span>').join(""):'<span class="muted">尚未识别商品名称</span>')+'</div>'+
+        '<div class="products">'+(r.products.length?r.products.map(p=>'<label class="product selectable" title="'+safe(p.name)+'"><input type="checkbox" data-goodkey="'+safe(r.key+"::"+p.name)+'" '+(selectedGoods.has(r.key+"::"+p.name)?"checked":"")+'><span>'+safe(p.name)+'</span></label>').join(""):'<span class="muted">尚未识别商品名称</span>')+'</div>'+
         (hasMany?'<div class="note">多商品多包裹：请确认每个运单对应的商品，不自动猜测。</div>':"")+
         packageHtml+note+
         '<div class="card-actions"><button class="text-btn" data-action="copy" data-no="'+safe(r.orderNo)+'">复制订单号</button>'+
@@ -57,6 +80,7 @@
         '<button class="text-btn" data-action="note" data-key="'+safe(r.key)+'">编辑备注</button>'+
         '<button class="text-btn" data-action="remove" data-key="'+safe(r.key)+'">删除</button></div></article>';
     }).join("")+(isPopup&&total>rows.length?'<div class="empty">另外 '+(total-rows.length)+' 条记录请在「管理全部」中查看。</div>':"");
+    renderSelected();
   }
   async function load(){
     if(refreshing){refreshQueued=true;return;}
@@ -136,6 +160,31 @@
   $("filter").addEventListener("change",render);
   $("platform").addEventListener("change",render);
   $("scan").addEventListener("click",scan);
+  $("openImport").addEventListener("click",()=>chrome.tabs.create({url:chrome.runtime.getURL("import.html")}));
+  $("clearSelection").addEventListener("click",()=>{selectedGoods.clear();render();});
+  $("batchCopy").addEventListener("click",async()=>{
+    const {shipments,unmatched}=chosenShipments();
+    if(!shipments.length){setNotice("选中的商品没有可确认的运单，请先关联商品与包裹。",true);return;}
+    try{
+      await copyText(shipments.map(x=>x.no).join("\n"));
+      setNotice("已复制 "+shipments.length+" 个不同运单号"+(unmatched.length?"。另有 "+unmatched.length+" 件商品未确定物流，未复制。":""));
+    }catch(e){setNotice("复制失败："+String(e.message||e),true);}
+  });
+  $("batchTransferred").addEventListener("click",async()=>{
+    const {shipments,unmatched}=chosenShipments();
+    if(!shipments.length)return;
+    if(shipments.length>75){setNotice("一次最多标记 75 个包裹，请减少勾选。",true);return;}
+    if(!confirm("将 "+shipments.length+" 个不同运单对应的包裹标记为已转运？"+
+      (unmatched.length?" 另有 "+unmatched.length+" 件未匹配物流的商品不会被处理。":"")))return;
+    let ok=0,unsynced=0;
+    for(const s of shipments){
+      try{const saved=await RuruStore.mark(s.key,s.no,true);ok++;if(!saved.synced)unsynced++;}
+      catch(e){}
+    }
+    await load();
+    setNotice("已标记 "+ok+" 个包裹为已转运。"+(unsynced?" 其中 "+unsynced+" 个尚未同步到其他电脑。":""),
+      !!unsynced);
+  });
   $("openDash")?.addEventListener("click",()=>chrome.runtime.openOptionsPage());
   $("newOrder").addEventListener("click",()=>$("orderDialog").showModal());
   $("cancelOrder").addEventListener("click",()=>$("orderDialog").close());
@@ -179,6 +228,8 @@
     }catch(err){setNotice("操作失败："+String(err.message||err),true);}
   });
   $("list").addEventListener("change",async e=>{
+    const good=e.target.closest("input[data-goodkey]");
+    if(good){if(good.checked)selectedGoods.add(good.dataset.goodkey);else selectedGoods.delete(good.dataset.goodkey);render();return;}
     const s=e.target.closest("select[data-link]");if(!s)return;
     try{
       const result=await RuruStore.setProductLink(s.dataset.link,s.dataset.no,s.value);
