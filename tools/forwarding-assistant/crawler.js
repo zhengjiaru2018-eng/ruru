@@ -139,7 +139,7 @@ function extract(no,knownProducts=[]){
  const packages=packageRows(document.body,candidates,no);
  return {ok:true,order:{platform,orderNo:no,products:p,packages,sourceUrl:location.href},links:links(document.body),found:packages.length,verification:/(滑块验证|请完成验证|验证码|安全验证|登录后查看)/.test(body.slice(0,1000))};
 }
-async function clickView(no,k){
+async function clickView(no,k,knownProducts=[]){
  const matcher=k==="logistics"?READ_LOG:READ_DETAIL,bodyIds=ids(txt(document.body));
  const candidates=Array.from(document.querySelectorAll("a,button,[role=button],[onclick]")).slice(0,2000);
  const found=candidates.find(el=>{
@@ -150,14 +150,14 @@ async function clickView(no,k){
  if(!found)return {ok:false,error:"没有找到可安全点击的查看入口"};
  found.click();
  await new Promise(resolve=>setTimeout(resolve,1800));
- return {ok:true,result:extract(no),current:location.href};
+ return {ok:true,result:extract(no,knownProducts),current:location.href};
 }
 chrome.runtime.onMessage.addListener((msg,sender,send)=>{
  if(!msg || !/^RURU_CRAWL_/.test(msg.type||""))return false;
  (async()=>{
   if(msg.type==="RURU_CRAWL_DISCOVER")return discover();
   if(msg.type==="RURU_CRAWL_EXTRACT")return extract(String(msg.orderNo||""),msg.products||[]);
-  if(msg.type==="RURU_CRAWL_CLICK")return clickView(String(msg.orderNo||""),msg.kind==="logistics"?"logistics":"detail");
+  if(msg.type==="RURU_CRAWL_CLICK")return clickView(String(msg.orderNo||""),msg.kind==="logistics"?"logistics":"detail",msg.products||[]);
   return {ok:false,error:"未知请求"};
  })().then(send).catch(e=>send({ok:false,error:String(e.message||e)}));
  return true;
