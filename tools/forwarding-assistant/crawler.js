@@ -172,7 +172,9 @@ function pddActions(){
     target=parent;
    }
   }
-  if(seen.has(target))continue;
+  if(seen.has(target)||!target.getClientRects().length)continue;
+  const style=getComputedStyle(target);
+  if(style.visibility==="hidden"||style.display==="none")continue;
   seen.add(target);out.push(target);
   if(out.length>=100)break;
  }
@@ -202,6 +204,13 @@ function pddProduct(card){
   names.add(value);candidates.push(value);
  }
  // 长标题通常是商品名称，短店铺名过滤。不能确定多个时留给人工核对。
+ if(!candidates.length){
+  const lines=String(card.innerText||"").split(/\n+/).map(x=>short(x).slice(0,160))
+   .filter(x=>x.length>=9 && x.length<=150
+    && !/查看物流|确认收货|申请退款|¥|￥|待收货|已发货|运费|物流|商家/.test(x)
+    && x.replace(/[^\u3400-\u9fff]/g,"").length>=6);
+  for(const line of lines)if(!names.has(line)){names.add(line);candidates.push(line);}
+ }
  candidates.sort((a,b)=>b.length-a.length);
  return candidates.slice(0,3).map(name=>({name,url:""}));
 }
@@ -225,7 +234,7 @@ function pddRows(){
   const signature=short(txt(card)).slice(0,650);
   const fingerprint=pddHash([index,orderNo,p.map(x=>x.name).join("|"),signature].join("::"));
   return {index,fingerprint,orderNo,products:p,cardText:signature.slice(0,80)};
- }).filter(r=>r.products.length||r.orderNo);
+ });
 }
 function pddTracks(s){
  return [...new Set([...s.matchAll(TRACK)].map(m=>m[1]))].filter(n=>/^[0-9A-Za-z-]{8,48}$/.test(n));
