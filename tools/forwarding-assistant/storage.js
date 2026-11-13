@@ -34,7 +34,7 @@
   function normalize(raw) {
     if (!isOrder(raw)) throw Error("订单号须为 6–42 位字母、数字、下划线或短横线");
     return {key:keyFor(raw.platform, raw.orderNo), platform:raw.platform,
-      orderNo:clean(raw.orderNo,42), products:uniqProducts(raw.products),
+      orderNo:clean(raw.orderNo,42), provisional:!!raw.provisional, products:uniqProducts(raw.products),
       packages:uniqPackages(raw.packages), transferred:!!raw.transferred,
       transferredAt:Number(raw.transferredAt) || 0, note:clean(raw.note,700),
       sourceUrl:clean(raw.sourceUrl,400), createdAt:Number(raw.createdAt) || Date.now(),
@@ -45,6 +45,7 @@
     if (!b) return a;
     const result = Object.assign({}, b);
     result.products = uniqProducts(b.products.concat(a.products));
+    result.provisional = !!(b.provisional || a.provisional);
     const pkgs = new Map(b.packages.map(p=>[p.no.toUpperCase(),Object.assign({},p)]));
     for (const p of a.packages) {
       const k = p.no.toUpperCase(), old=pkgs.get(k);
@@ -69,7 +70,7 @@
   function signature(o) {
     if (!o) return "";
     const r = normalize(o);
-    return JSON.stringify([r.products,r.packages,r.transferred,r.transferredAt,r.note,r.sourceUrl]);
+    return JSON.stringify([r.provisional,r.products,r.packages,r.transferred,r.transferredAt,r.note,r.sourceUrl]);
   }
   async function getOne(key) {
     const [l,s] = await Promise.all([chrome.storage.local.get(key),chrome.storage.sync.get(key)]);
