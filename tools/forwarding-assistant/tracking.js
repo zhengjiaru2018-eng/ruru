@@ -19,6 +19,11 @@
   }
   LABEL.lastIndex=0;
   for(const m of s.matchAll(LABEL))add(m[1],"label");
+  // Some logistics popups render only "单号：" without the word "快递".
+  if(shipping.test(s)){
+   const general=/(?:^|[\r\n])\s*单号\s*[:：]\s*([A-Z0-9][A-Z0-9-]{7,47})/gim;
+   for(const m of s.matchAll(general))add(m[1],"generic-logistics-label");
+  }
   // Many pages render label and value in separate elements/lines.
   const lines=s.split(/[\r\n]+/).map(x=>x.trim()).filter(Boolean);
   for(let i=0;i<lines.length;i++){
