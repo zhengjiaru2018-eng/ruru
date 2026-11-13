@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "如如转运助手｜淘宝拼多多物流",
-  "version": "0.2.0",
-  "description": "自动逐单查看淘宝拼多多订单和物流、提取并匹配运单号，支持复制、转运标记和 Chrome 同步",
+  "version": "0.2.1",
+  "description": "淘宝与拼多多批量打开订单物流，自动抓取运单、关联商品、一键复制及转运管理",
   "permissions": [
     "storage",
     "tabs",
