@@ -2,7 +2,7 @@
  * Read only displayed text; NEVER infer order number from tracking number. */
 (()=>{
  "use strict";
- const valid=v=>/^[A-Za-z0-9][A-Za-z0-9-]{7,47}$/.test(v||"")&&/\d{8,}/.test(v||"");
+ const valid=v=>/^[A-Za-z0-9][A-Za-z0-9-]{7,47}$/.test(v||"")&&((v||"").match(/\d/g)||[]).length>=8;
  const LABEL=/(?:快递单号|物流单号|物流运单号|运单号|运单编号|运单号码|包裹单号|快递编号|物流编号|快件单号|快递运单号|tracking(?:\s*(?:number|no\.?))?)\s*(?:[:：#]|复制|点击复制|\s){0,12}\s*([A-Z0-9][A-Z0-9-]{7,47})/gi;
  const LBL_LINE=/(?:快递单号|物流单号|物流运单号|运单号|运单编号|运单号码|包裹单号|快递编号|物流编号|快件单号|tracking(?:\s*(?:number|no))?)/i;
  const CODE=/(?<![A-Za-z0-9])(?:[A-Za-z]{1,5}[-]?)?\d{10,28}[A-Za-z0-9-]*(?![A-Za-z0-9])/g;
@@ -34,7 +34,9 @@
   if(!result.length && allowFallback && shipping.test(s)){
    const found=[];
    for(let i=0;i<lines.length;i++){
-    if(ORDER.test(lines[i]))continue;
+    if(ORDER.test(lines[i])||ORDER.test(lines[i-1]||""))continue;
+    const context=[lines[i-1]||"",lines[i],lines[i+1]||""].join(" ");
+    if(!/(复制|物流单号|快递单号|运单号|快递公司|物流公司|快递信息)/i.test(context))continue;
     for(const m of lines[i].matchAll(CODE)){
      const value=m[0];
      if(/^\d{11}$/.test(value))continue; // Avoid mobile phone numbers.
