@@ -203,5 +203,62 @@
     if(!Object.keys(changes).some(k=>k.startsWith(RuruStore.PREFIX)))return;
     clearTimeout(updateTimer);updateTimer=setTimeout(load,220);
   });
+
+  // User-requested batch crawler, with persisted progress even when popup closes.
+  const BATCH_KEY="ruru_fw_batch_job_v1";
+  async function renderBatch(job){
+    if(!job){$("crawlProgress").textContent="未启动批量抓取";return;}
+    const active=job.state==="running" && Date.now()-(job.updatedAt||0)<5*60*1000;
+    $("autoScan").disabled=active;
+    $("stopScan").hidden=!active;
+    let state=job.state==="done"?"已完成":job.state==="stopped"?"已停止":
+      job.state==="needs-attention"?"需要人工处理":active?"正在抓取":"可能已中断，请重新启动";
+    let info=state+"｜已处理 "+(job.completed||0)+" 单，提取 "+(job.found||0)+" 个运单号";
+    if(job.current)info+="\n"+job.current;
+    if(job.errors?.length)info+="\n提示："+job.errors.slice(-2).join("；").slice(0,250);
+    $("crawlProgress").textContent=info;
+  }
+  async function refreshBatch(){
+    try{
+      const d=await chrome.storage.local.get(BATCH_KEY);
+      await renderBatch(d[BATCH_KEY]);
+    }catch(e){$("crawlProgress").textContent="无法读取抓取状态："+String(e.message||e);}
+  }
+  $("autoScan").addEventListener("click",async()=>{
+    $("autoScan").disabled=true;
+    $("crawlProgress").textContent="正在启动批量抓取…";
+    try{
+      const tabs=await chrome.tabs.query({active:true,lastFocusedWindow:true});
+      let tab=tabs[0],src=tab?.url||"";
+      const explicit=$("platform").value;
+      let p=explicit!=="all"?explicit:/pinduoduo\.com|yangkeduo\.com/.test(src)?"pdd":"taobao";
+      if(p==="pdd"&&!/https:\/\/[^/]*\.(pinduoduo\.com|yangkeduo\.com)\//.test(src)){
+        const all=await chrome.tabs.query({});
+        const candidate=all.find(x=>/https:\/\/[^/]*\.(pinduoduo\.com|yangkeduo\.com)\//.test(x.url||""));
+        src=candidate?.url||"";
+      }
+      const response=await chrome.runtime.sendMessage({type:"RURU_CRAWL_START",platform:p,sourceUrl:src});
+      if(!response?.ok)throw Error(response?.error||"启动失败");
+      setNotice("已开始自动逐单抓取；可以关闭弹窗，进度会保存到插件。");
+      await refreshBatch();
+    }catch(err){setNotice("无法启动："+String(err.message||err),true);}
+    finally{$("autoScan").disabled=false;await refreshBatch();}
+  });
+  $("stopScan").addEventListener("click",async()=>{
+    $("stopScan").disabled=true;
+    try{
+      await chrome.runtime.sendMessage({type:"RURU_CRAWL_STOP"});
+      setNotice("收到停止请求；本笔订单处理结束后停止。");
+      await refreshBatch();
+    }catch(e){setNotice("停止失败："+String(e.message||e),true);}
+    finally{$("stopScan").disabled=false;}
+  });
+  chrome.storage.onChanged.addListener((changes,area)=>{
+    if(area==="local" && changes[BATCH_KEY]) {
+      renderBatch(changes[BATCH_KEY].newValue);
+      load();
+    }
+  });
+  refreshBatch();
   load();
 })();
