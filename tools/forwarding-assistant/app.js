@@ -46,7 +46,7 @@
       }).join(""):'<div class="no-track">尚未识别到物流单号；可以打开物流详情页重新抓取，或手动补录。</div>';
       const note=r.note?'<div class="note">备注：'+safe(r.note)+'</div>':"";
       return '<article class="order-card"><div class="order-head"><div><div class="order-id"><span class="pill '+(r.platform==="pdd"?"pdd":"")+'">'+
-        (r.platform==="pdd"?"拼多多":"淘宝/天猫")+'</span> '+safe(r.orderNo)+'</div>'+
+        (r.platform==="pdd"?"拼多多":"淘宝/天猫")+'</span> '+(r.provisional?'<span class="provisional">订单号待核对 · '+safe(r.orderNo)+'</span>':safe(r.orderNo))+'</div>'+
         '<div class="date">更新 '+safe(date(r.updatedAt))+(r.syncPending?' · 仅本机，待同步':'')+'</div></div>'+
         '<span class="status '+(status==="done"?"done":"")+'">'+(status==="done"?"✓ 已完成":status==="noTracking"?"待补运单":"进行中")+'</span></div>'+
         '<div class="products">'+(r.products.length?r.products.map(p=>'<span class="product" title="'+safe(p.name)+'">'+safe(p.name)+'</span>').join(""):'<span class="muted">尚未识别商品名称</span>')+'</div>'+
@@ -113,11 +113,11 @@
     setNotice("已导出 JSON 完整备份");
   }
   function exportCsv(){
-    const rows=[["平台","订单号","商品名称","物流公司","物流单号","关联商品","是否已转运","转运时间","备注","最后更新"]];
+    const rows=[["平台","真实订单号","订单编号待核对","内部临时引用","商品名称","物流公司","物流单号","关联商品","是否已转运","转运时间","备注","最后更新"]];
     for(const r of orders){
       const name=r.products.map(p=>p.name).join(" / ");
-      if(!r.packages.length)rows.push([RuruStore.PLATFORM[r.platform],r.orderNo,name,"","","",r.transferred?"是":"否",date(r.transferredAt),r.note,date(r.updatedAt)]);
-      for(const p of r.packages)rows.push([RuruStore.PLATFORM[r.platform],r.orderNo,name,p.company,p.no,p.productName,p.transferred?"是":"否",date(p.transferredAt),r.note,date(r.updatedAt)]);
+      if(!r.packages.length)rows.push([RuruStore.PLATFORM[r.platform],r.provisional?"":r.orderNo,r.provisional?"是":"否",r.provisional?r.orderNo:"",name,"","","",r.transferred?"是":"否",date(r.transferredAt),r.note,date(r.updatedAt)]);
+      for(const p of r.packages)rows.push([RuruStore.PLATFORM[r.platform],r.provisional?"":r.orderNo,r.provisional?"是":"否",r.provisional?r.orderNo:"",name,p.company,p.no,p.productName,p.transferred?"是":"否",date(p.transferredAt),r.note,date(r.updatedAt)]);
     }
     const csv="\ufeff"+rows.map(row=>row.map(csvCell).join(",")).join("\r\n");
     download("ruru-forwarding-"+new Date().toISOString().slice(0,10)+".csv",csv,"text/csv;charset=utf-8");
