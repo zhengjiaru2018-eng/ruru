@@ -157,8 +157,13 @@ async function clickView(no,k,knownProducts=[]){
  });
  if(!found)return {ok:false,error:"没有找到可安全点击的查看入口"};
  found.click();
- await new Promise(resolve=>setTimeout(resolve,1800));
- return {ok:true,result:extract(no,knownProducts),current:location.href};
+ let result=null;
+ for(let poll=0;poll<7;poll++){
+  await new Promise(resolve=>setTimeout(resolve,poll===0?650:550));
+  result=extract(no,knownProducts);
+  if(result?.found||result?.verification)break;
+ }
+ return {ok:true,result,current:location.href};
 }
 
 // 拼多多：订单列表不一定公开订单号。通过卡片内的「查看物流」逐单获取。
