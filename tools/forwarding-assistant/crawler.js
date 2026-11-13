@@ -152,10 +152,159 @@ async function clickView(no,k,knownProducts=[]){
  await new Promise(resolve=>setTimeout(resolve,1800));
  return {ok:true,result:extract(no,knownProducts),current:location.href};
 }
+
+// 拼多多：订单列表不一定公开订单号。通过卡片内的「查看物流」逐单获取。
+// 只读取/点击当前账号可见的只读入口；不读取内部应用状态、Cookie 或私有接口。
+function pddActions(){
+ const out=[],seen=new Set(),walk=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
+ let n,steps=0;
+ while((n=walk.nextNode())&&++steps<32000){
+  if(short(n.textContent).replace(/\s+/g,"")!=="查看物流")continue;
+  let el=n.parentElement;
+  if(!el)continue;
+  let target=el.closest("button,a,[role='button']");
+  if(target && short(target.innerText||target.textContent).replace(/\s+/g,"")!=="查看物流")target=null;
+  if(!target){
+   target=el;
+   for(let i=0;i<5&&target.parentElement;i++){
+    const parent=target.parentElement;
+    if(short(parent.innerText||parent.textContent).replace(/\s+/g,"")!=="查看物流")break;
+    target=parent;
+   }
+  }
+  if(seen.has(target))continue;
+  seen.add(target);out.push(target);
+  if(out.length>=100)break;
+ }
+ return out;
+}
+function pddCard(target){
+ let el=target,best=target.parentElement||target;
+ for(let i=0;el&&el!==document.body&&i<14;el=el.parentElement,i++){
+  const s=txt(el);
+  if(s.length>3400)break;
+  const controls=Array.from(el.querySelectorAll("button,a,[role='button'],[class*='btn'],[class*='button']")).filter(
+   a=>short(a.innerText||a.textContent).replace(/\s+/g,"")==="查看物流");
+  if(controls.length>1)break;
+  if(s.length>22 && (el.querySelector("img")||el.querySelector("a[href*='goods']")))best=el;
+ }
+ return best;
+}
+function pddProduct(card){
+ const linked=products(card);
+ if(linked.length)return linked.slice(0,8);
+ const names=new Set(),candidates=[];
+ const find=card.querySelectorAll("img[alt], [class*='goods'],[class*='title'],[class*='name'],[class*='desc'],[class*='product'],p");
+ for(const el of Array.from(find).slice(0,160)){
+  if(el.querySelectorAll && el.querySelectorAll("*").length>5)continue;
+  const value=short(el.getAttribute?.("alt")||el.innerText||el.textContent).slice(0,160);
+  if(value.length<9 || value.length>150 || names.has(value))continue;
+  if(/查看物流|确认收货|申请退款|运费|支付|退款|领取|快递|店铺|已发货|待收货/.test(value))continue;
+  if(/[¥￥]\s*\d/.test(value)||value.replace(/[^\u3400-\u9fff]/g,"").length<5)continue;
+  names.add(value);candidates.push(value);
+ }
+ // 长标题通常是商品名称，短店铺名过滤。不能确定多个时留给人工核对。
+ candidates.sort((a,b)=>b.length-a.length);
+ return candidates.slice(0,3).map(name=>({name,url:""}));
+}
+function pddOrderNo(card){
+ for(let el=card,i=0;el&&i<3;el=el.parentElement,i++){
+  for(const k of ["data-order-sn","data-order-id","data-orderid","data-trade-id"]){
+   const v=el.getAttribute?.(k);if(isOrder(v))return v;
+  }
+ }
+ const a=ids(txt(card));return a.length===1?a[0]:"";
+}
+function pddHash(s){
+ let h=2166136261;
+ for(const c of s){h^=c.charCodeAt(0);h=Math.imul(h,16777619);}
+ return (h>>>0).toString(36);
+}
+function pddRows(){
+ return pddActions().map((target,index)=>{
+  const card=pddCard(target),p=pddProduct(card),orderNo=pddOrderNo(card);
+  const signature=short(txt(card)).slice(0,650);
+  const fingerprint=pddHash([index,orderNo,p.map(x=>x.name).join("|"),signature].join("::"));
+  return {index,fingerprint,orderNo,products:p,cardText:signature.slice(0,80)};
+ }).filter(r=>r.products.length||r.orderNo);
+}
+function pddTracks(s){
+ return [...new Set([...s.matchAll(TRACK)].map(m=>m[1]))].filter(n=>/^[0-9A-Za-z-]{8,48}$/.test(n));
+}
+function pddResult(root,prior,row){
+ const all=txt(root);
+ const dialogs=Array.from(document.querySelectorAll("[role=dialog],[aria-modal=true],[class*='modal'],[class*='Modal'],[class*='drawer'],[class*='Drawer'],[class*='popup'],[class*='Popup']")).filter(el=>{
+  const t=txt(el);
+  return t.length>12&&t.length<12000&&/物流|快递|运单|包裹/.test(t)&&el.getClientRects().length>0;
+ });
+ let scoped=dialogs.sort((a,b)=>txt(a).length-txt(b).length)[0];
+ let source=txt(scoped||root);
+ let nos=pddTracks(source).filter(n=>n!==row.orderNo);
+ // In a popup the rest of the order list should not be associated with the clicked card.
+ if(!scoped){
+  const changed=pddTracks(all).filter(n=>!prior.has(n)&&n!==row.orderNo);
+  if(changed.length>0&&changed.length<=10)nos=changed;
+  else if(pddActions().length>1)nos=[]; // Multiple cards remain, so ambiguous.
+ }
+ nos=nos.slice(0,12);
+ const nums=ids(source),realNo=isOrder(row.orderNo)?row.orderNo:nums.length===1?nums[0]:"";
+ const carrier=source.match(COMPANY)?.[1]||"";
+ const product=row.products||[];
+ return {ok:true,orderNo:realNo,products:product,
+  packages:nos.map(no=>({no,company:carrier,productName:product.length===1?product[0].name:""})),
+  found:nos.length,needsReview:!realNo,modal:!!scoped,
+  verification:/(滑块验证|请完成验证|验证码|安全验证|登录后查看)/.test(all.slice(0,1000))};
+}
+async function pddDiscover(){
+ if(platform!=="pdd")return {ok:false,error:"这不是拼多多页面"};
+ const original=window.scrollY||0;
+ // Limited scrolling to allow lazy-loaded order cards, without bypassing pagination.
+ for(let i=0;i<3;i++){
+  window.scrollBy(0,Math.max(window.innerHeight,520));
+  await new Promise(r=>setTimeout(r,430));
+ }
+ const rows=pddRows().slice(0,40);
+ window.scrollTo(0,original);
+ return {ok:true,rows,current:location.href,platform,found:rows.length};
+}
+async function pddOpen(msg){
+ if(platform!=="pdd")return {ok:false,error:"非拼多多页面"};
+ const index=Number(msg.index),expected=String(msg.fingerprint||"");
+ const rows=pddRows(),row=rows[index];
+ if(!row||row.fingerprint!==expected)return {ok:false,error:"订单列表顺序发生变化；为了避免串单，已跳过"};
+ const target=pddActions()[index];
+ if(!target)return {ok:false,error:"找不到对应的查看物流按钮"};
+ const prior=new Set(pddTracks(txt(document.body)));
+ target.scrollIntoView({block:"center",behavior:"instant"});
+ await new Promise(r=>setTimeout(r,200));
+ // Never click the adjacent 确认收货 / 退款 buttons.
+ if(short(target.innerText||target.textContent).replace(/\s+/g,"")!=="查看物流")
+  return {ok:false,error:"按钮文字不再是查看物流，已拒绝点击"};
+ target.click();
+ await new Promise(r=>setTimeout(r,1650));
+ const result=pddResult(document.body,prior,row);
+ return {ok:true,result,current:location.href,clicked:true};
+}
+function pddExtractDetail(msg){
+ const row={orderNo:msg.orderNo||"",products:Array.isArray(msg.products)?msg.products.slice(0,15):[]};
+ const page=txt(document.body);
+ const idsOnPage=ids(page);
+ if(idsOnPage.length>1)return {ok:false,error:"当前页面仍有多笔订单，无法唯一关联运单"};
+ if(idsOnPage.length===1&&isOrder(row.orderNo)&&idsOnPage[0]!==row.orderNo)
+  return {ok:false,error:"订单号不一致"};
+ if(!row.products.length && !isOrder(row.orderNo))
+  return {ok:false,error:"无法将新页面可靠关联到原始商品"};
+ const outcome=pddResult(document.body,new Set(),row);
+ if(pddActions().length>1&&!outcome.modal)return {ok:false,error:"仍是订单列表，无法确认单号对应关系"};
+ return outcome;
+}
 chrome.runtime.onMessage.addListener((msg,sender,send)=>{
- if(!msg || !/^RURU_CRAWL_/.test(msg.type||""))return false;
+ if(!msg || !/^(RURU_CRAWL_|RURU_PDD_)/.test(msg.type||""))return false;
  (async()=>{
-  if(msg.type==="RURU_CRAWL_DISCOVER")return discover();
+  if(msg.type==="RURU_PDD_DISCOVER")return pddDiscover();
+   if(msg.type==="RURU_PDD_OPEN")return pddOpen(msg);
+   if(msg.type==="RURU_PDD_EXTRACT")return pddExtractDetail(msg);
+   if(msg.type==="RURU_CRAWL_DISCOVER")return discover();
   if(msg.type==="RURU_CRAWL_EXTRACT")return extract(String(msg.orderNo||""),msg.products||[]);
   if(msg.type==="RURU_CRAWL_CLICK")return clickView(String(msg.orderNo||""),msg.kind==="logistics"?"logistics":"detail",msg.products||[]);
   return {ok:false,error:"未知请求"};
