@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>转运单管理 · 如如转运助手</title><link rel="stylesheet" href="style.css"></head>
+<body class="dashboard">
+<div class="layout">
+  <header class="masthead"><div class="logo">如</div><div><div class="eyebrow">RU RU · FORWARDING</div><h1>我的转运清单</h1><p>淘宝 · 天猫 · 拼多多 ｜ 商品与包裹的转运工作台</p></div></header>
+  <section class="stats" id="stats"><div><b>—</b><small>总订单</small></div><div><b>—</b><small>待转运包裹</small></div><div><b>—</b><small>已转运包裹</small></div></section>
+  <section class="controls"><div class="action-row"><button id="openImport" class="import-launch">📄 导入淘宝 Excel · 选择商品</button></div><div class="batch-box"><div class="batch-heading">自动逐单查物流</div><p>淘宝从已购订单列表逐单查看；拼多多按商品卡片逐个点击「查看物流」。最多 40 条。</p><div class="action-row"><button id="autoScan" class="primary">◎ 一键批量抓取</button><button id="stopScan" class="secondary" hidden>停止</button></div><div id="crawlProgress" class="crawl-progress" role="status">未启动批量抓取</div></div><div class="action-row"><button id="scan" class="primary">↻ 抓取当前页面</button><button id="newOrder" class="secondary">＋ 手动新增</button>
+  <button id="exportJson" class="secondary">导出 JSON 备份</button><button id="exportCsv" class="secondary">导出 CSV</button>
+  <button id="importJson" class="secondary">导入 JSON</button><input type="file" id="importFile" accept=".json,application/json" hidden></div>
+  <div class="action-row"><input id="search" aria-label="搜索" type="search" placeholder="搜索商品、订单号、快递单号、备注">
+  <select id="filter" aria-label="筛选转运状态"><option value="all">全部状态</option><option value="pending">待转运</option><option value="done">已转运</option><option value="noTracking">无运单号</option></select>
+  <select id="platform" aria-label="平台"><option value="all">全部平台</option><option value="taobao">淘宝/天猫</option><option value="pdd">拼多多</option></select></div></section>
+  <div id="selectionBar" class="selection-bar"><span id="selectedInfo">勾选商品后可批量复制对应运单</span><div class="action-row"><button id="batchCopy" class="secondary" disabled>复制选中的物流号</button><button id="batchTransferred" class="secondary" disabled>批量标记已转运</button><button id="clearSelection" class="text-btn" disabled>清空选择</button></div></div><div id="notice" class="notice" role="status"></div><main id="list" class="list"><div class="empty">正在加载订单…</div></main>
+  <footer><span id="syncState">读取同步状态…</span><button id="retrySync" class="text-btn">重试同步</button>
+  <span class="footer-note">跨电脑同步需要相同 Chrome 账号开启同步；超额时请导出 JSON 备份。</span></footer>
+</div>
+<dialog id="orderDialog"><form id="orderForm"><h2>手动新增 / 补录订单</h2>
+<label>平台<select name="platform" required><option value="taobao">淘宝/天猫</option><option value="pdd">拼多多</option></select></label>
+<label>订单号<input name="orderNo" required minlength="6" maxlength="42" placeholder="订单编号"></label>
+<label>商品名称<input name="productName" placeholder="例如：棉质睡衣"></label>
+<label>物流单号<input name="trackingNo" placeholder="暂时没有可以留空"></label>
+<label>快递公司<input name="company" placeholder="例如：中通"></label>
+<label>备注<textarea name="note" rows="2" placeholder="可选，请勿填写个人敏感资料"></textarea></label>
+<div class="dialog-actions"><button type="button" id="cancelOrder" class="secondary">取消</button><button type="submit" class="primary">保存订单</button></div></form></dialog>
+<script src="storage.js"></script><script src="app.js"></script></body></html>

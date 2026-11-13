@@ -1,0 +1,50 @@
+{
+  "manifest_version": 3,
+  "name": "如如转运助手｜淘宝拼多多物流",
+  "version": "0.3.1",
+  "description": "修复淘宝拼多多物流弹窗/多标签页/iframe运单读取，支持淘宝 Excel 选择导入与转运清单同步",
+  "permissions": [
+    "storage",
+    "tabs",
+    "activeTab",
+    "webNavigation"
+  ],
+  "action": {
+    "default_title": "如如转运助手",
+    "default_popup": "popup.html"
+  },
+  "options_page": "dashboard.html",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.taobao.com/*",
+        "*://*.tmall.com/*",
+        "*://*.pinduoduo.com/*",
+        "*://*.yangkeduo.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://*.taobao.com/*",
+        "*://*.tmall.com/*",
+        "*://*.pinduoduo.com/*",
+        "*://*.yangkeduo.com/*"
+      ],
+      "js": [
+        "tracking.js",
+        "crawler.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true,
+      "match_about_blank": true
+    }
+  ],
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnTm2N70Af4hB17XUOq7GJhm4i2cX6ws0hREqbdzj3szFf+p5ot9Ce/UV80Zqg4fQV1v/h3i33Mwp8ROLb3yel2f6vKIGGJ8DMxPcOtwgK8C3zicURuYYRoBcU4u3aDQu9VAQstWUFJEEnfqheGx/14FGi78yM+CL4K0wFWZn9oEgZVHzS8bQo/JkX/gSfLpyWmd40NQb7knEWxT3NpkGnTTprMvekQSbZokBNALLBC96xoa/Y6BxZcjgoplbA4uD4q41LJ0GNVea9ele7NbGDjZeGF55ghyjr2Zxr08KTuZr+WFGqW/oTWopZjm8r42CnLwoRXEvrVM7qEUrWdiYbQIDAQAB"
+}

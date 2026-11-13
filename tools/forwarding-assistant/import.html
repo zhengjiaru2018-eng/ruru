@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>导入淘宝 Excel · 如如转运助手</title><link rel="stylesheet" href="style.css"></head>
+<body class="importer">
+<div class="layout">
+ <header class="masthead"><div class="logo">如</div><div><div class="eyebrow">RU RU · TAOBAO IMPORT</div><h1>从淘宝 Excel 导入商品</h1><p>先预览、勾选需要的商品，再导入转运清单。不会上传 Excel 到任何服务器。</p></div></header>
+ <section class="import-upload">
+  <label for="excelFile" class="drop-label"><icon></icon><strong>选择淘宝订单数据.xlsx 文件</strong><span>支持淘宝导出的「商品名称 / 物流公司 / 物流单号」表格，.xlsx，最大 8 MB</span></label>
+  <input id="excelFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+  <p id="fileState" role="status">尚未选择文件。Excel 只会在这台电脑的插件页面中解析。</p>
+ </section>
+ <section id="importControls" hidden>
+  <div class="import-overview">
+   <div><b id="totalItems">0</b><small>商品记录</small></div>
+   <div><b id="trackItems">0</b><small>有物流号</small></div>
+   <div><b id="uniqueParcels">0</b><small>不同包裹</small></div>
+   <div><b id="selectedItems">0</b><small>已勾选商品</small></div>
+  </div>
+  <section class="controls">
+   <div class="action-row"><input type="search" id="importSearch" placeholder="搜索商品名称、物流单号、快递公司" aria-label="搜索商品">
+    <select id="importFilter"><option value="all">全部商品</option><option value="tracked">已有物流单号</option><option value="pending">尚无物流单号</option><option value="selected">仅看已勾选</option></select>
+   </div>
+   <div class="action-row">
+    <button class="secondary" id="chooseVisible">勾选当前筛选结果</button>
+    <button class="secondary" id="chooseTracked">仅选有物流的</button>
+    <button class="secondary" id="clearVisible">清除当前筛选结果</button>
+    <button class="secondary" id="clearAll">全部取消</button>
+   </div>
+   <div class="selection-actions">
+    <div id="selectionInfo">请选择你想导入的商品</div>
+    <div class="action-row"><button class="secondary" id="copySelected" disabled>复制选中的运单</button><button class="primary" id="confirmImport" disabled>导入选中商品</button></div>
+   </div>
+  </section>
+  <p id="importNotice" class="notice" role="status"></p>
+  <div id="importRows" class="import-list"></div>
+ </section>
+ <footer><button id="viewOrders" class="text-btn">查看已保存的转运清单</button><span>同一运单号的已选商品会合并为一个包裹；无物流商品可留待后续补录。</span></footer>
+</div>
+<script src="storage.js"></script><script src="xlsx.js"></script><script src="import.js"></script>
+</body></html>
