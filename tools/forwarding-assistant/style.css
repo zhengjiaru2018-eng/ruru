@@ -24,3 +24,5 @@ dialog{border:0;border-radius:15px;padding:22px;box-shadow:0 24px 90px #0003;max
 .batch-box .action-row button.primary{flex:1;background:#086f68}
 .crawl-progress{font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6;color:#326665;margin-top:5px;max-height:100px;overflow:auto}
 button[hidden]{display:none!important}
+
+.provisional{font-weight:700;color:#b16a13;font-size:11px;word-break:break-all}
